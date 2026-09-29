@@ -228,6 +228,7 @@ pub mod collab_panel;
 pub mod collab_ui;
 pub mod cursor_hover_flow;
 pub mod drag_flow;
+mod drag_flow_geometry;
 mod drag_flow_index;
 pub mod host_canvas_geometry;
 pub mod host_frame_bookkeeping;

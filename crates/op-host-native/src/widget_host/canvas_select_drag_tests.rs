@@ -276,7 +276,7 @@ fn drop_preview_reuses_container_index_across_pointer_frames() {
         moved: true,
         total_dx: 0.0,
         total_dy: 0.0,
-        overlay_bounds: None,
+        ..Default::default()
     });
     host.refresh_layout_scene();
     let drag = host.node_drag.expect("active drag");
@@ -463,7 +463,7 @@ fn active_node_drag_keeps_default_cursor() {
         moved: true,
         total_dx: 0.0,
         total_dy: 0.0,
-        overlay_bounds: None,
+        ..Default::default()
     });
 
     assert_eq!(

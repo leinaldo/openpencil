@@ -135,6 +135,8 @@ impl WidgetHostNative {
             total_dx: 0.0,
             total_dy: 0.0,
             overlay_bounds: None,
+            snap_dx: 0.0,
+            snap_dy: 0.0,
         });
     }
 

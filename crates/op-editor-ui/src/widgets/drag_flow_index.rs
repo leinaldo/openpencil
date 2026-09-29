@@ -1,11 +1,16 @@
 //! Gesture-scoped lookup index for pointer-rate canvas drop previews.
 
 use super::drag_flow::DragCommitPlan;
+use super::drag_flow_geometry::{
+    centre, own_rotation_in, own_transform, page_overlay_line, page_overlay_rect, rect_around,
+    to_point,
+};
 use crate::layout_scene::{LayoutScene, SceneNode};
 use crate::{Point2D, Rect};
+use glam::{DAffine2, DVec2};
 use jian_ops_schema::node::PenNode;
 use op_editor_core::drag_mutators::{auto_layout_direction, DragDropTarget, FlexDirection};
-use op_editor_core::editor_ui_state::{CanvasDropIndicator, CanvasOverlayLine, CanvasOverlayRect};
+use op_editor_core::editor_ui_state::{CanvasDropIndicator, CanvasOverlayLine};
 use op_editor_core::{EditorState, NodeId, PenNodeExt};
 use std::collections::{HashMap, HashSet};
 
@@ -22,21 +27,24 @@ struct CanvasDropIndexKey {
 struct SceneBounds {
     bounds: Rect,
     aggregate_bounds: Rect,
+    /// Maps the frame `bounds` is axis-aligned in (shared with the
+    /// node's children) to the page.
+    to_page: DAffine2,
 }
 
 #[derive(Debug)]
 struct IndexedContainer {
     id: NodeId,
     bounds: Rect,
+    to_page: DAffine2,
+    from_page: DAffine2,
     flex: Option<FlexDirection>,
     flex_children: Vec<Rect>,
     children: Vec<IndexedContainer>,
 }
 
-struct ContainerDropCandidate {
-    parent_id: NodeId,
-    bounds: Rect,
-    flex: Option<FlexDirection>,
+struct ContainerDropCandidate<'a> {
+    container: &'a IndexedContainer,
     index: usize,
     insertion: Option<CanvasOverlayLine>,
 }
@@ -91,7 +99,7 @@ pub fn build_canvas_drop_index(
         .and_then(auto_layout_direction);
     let page = scene.active_page()?;
     let mut scene_bounds = HashMap::new();
-    collect_scene_bounds(&page.children, &mut scene_bounds);
+    collect_scene_bounds(&page.children, DAffine2::IDENTITY, &mut scene_bounds);
     let mut dragged_scene_path = Vec::new();
     if !find_scene_path(&page.children, dragged_id.as_str(), &mut dragged_scene_path) {
         return None;
@@ -122,50 +130,68 @@ pub fn plan_drag_commit_indexed(
     total_dy: f64,
 ) -> Option<DragCommitPlan> {
     let page = scene.active_page()?;
-    let node_scene = scene_node_at_path(&page.children, &index.dragged_scene_path)?;
-    let mut bounds = node_scene.aggregate_bounds();
+    let (node_scene, parent_to_page) = scene_node_at_path(
+        &page.children,
+        &index.dragged_scene_path,
+        DAffine2::IDENTITY,
+    )?;
+    let bounds = node_scene.aggregate_bounds();
+    let mut node_to_page = parent_to_page * own_transform(node_scene);
     if index.current_parent_flex.is_some() {
-        bounds.origin.x += total_dx as f32;
-        bounds.origin.y += total_dy as f32;
+        // Flex children never doc-translate during the drag — the
+        // accumulated page-space cursor delta is where they were dropped.
+        node_to_page = DAffine2::from_translation(DVec2::new(total_dx, total_dy)) * node_to_page;
     }
-    let center = Point2D::new(
-        bounds.origin.x + bounds.size.x / 2.0,
-        bounds.origin.y + bounds.size.y / 2.0,
-    );
-    let candidate = container_drop_candidate(index, center, bounds);
-    let mut indicator = None;
-    let target = if let Some(candidate) = candidate {
-        let same_parent = index.current_parent.as_ref() == Some(&candidate.parent_id);
-        if same_parent && candidate.flex.is_none() {
-            None
-        } else {
-            indicator = Some(CanvasDropIndicator {
-                ghost: overlay_rect(bounds),
-                target: Some(overlay_rect(candidate.bounds)),
-                insertion: candidate.insertion,
+    let page_centre = node_to_page.transform_point2(centre(bounds));
+    let page_bounds = rect_around(page_centre, bounds.size);
+    let page_rotation = Some(own_rotation_in(
+        node_scene,
+        node_to_page,
+        DAffine2::IDENTITY,
+    ));
+    let ghost = page_overlay_rect(bounds, node_to_page);
+    let mut plan = DragCommitPlan {
+        target: None,
+        dropped_bounds: page_bounds,
+        dropped_rotation: None,
+        page_bounds,
+        page_rotation,
+        indicator: None,
+    };
+    if let Some(candidate) = container_drop_candidate(index, page_centre) {
+        let container = candidate.container;
+        let same_parent = index.current_parent.as_ref() == Some(&container.id);
+        if !same_parent || container.flex.is_some() {
+            plan.indicator = Some(CanvasDropIndicator {
+                ghost,
+                target: Some(page_overlay_rect(container.bounds, container.to_page)),
+                insertion: candidate
+                    .insertion
+                    .map(|line| page_overlay_line(line, container.to_page)),
             });
-            Some(DragDropTarget::Container {
-                parent_id: candidate.parent_id,
-                parent_abs_x: candidate.bounds.origin.x as f64,
-                parent_abs_y: candidate.bounds.origin.y as f64,
+            plan.target = Some(DragDropTarget::Container {
+                parent_id: container.id.clone(),
+                parent_abs_x: container.bounds.origin.x as f64,
+                parent_abs_y: container.bounds.origin.y as f64,
                 index: candidate.index,
-            })
+            });
+            plan.dropped_bounds = rect_around(
+                container.from_page.transform_point2(page_centre),
+                bounds.size,
+            );
+            plan.dropped_rotation = (!same_parent)
+                .then(|| own_rotation_in(node_scene, node_to_page, container.to_page));
         }
     } else if index.current_parent.is_some() {
-        indicator = Some(CanvasDropIndicator {
-            ghost: overlay_rect(bounds),
+        plan.indicator = Some(CanvasDropIndicator {
+            ghost,
             target: None,
             insertion: None,
         });
-        Some(DragDropTarget::PageRoot { index: 0 })
-    } else {
-        None
-    };
-    Some(DragCommitPlan {
-        target,
-        dropped_bounds: bounds,
-        indicator,
-    })
+        plan.target = Some(DragDropTarget::PageRoot { index: 0 });
+        plan.dropped_rotation = page_rotation;
+    }
+    Some(plan)
 }
 
 fn canvas_drop_index_key(
@@ -197,26 +223,38 @@ fn find_scene_path(nodes: &[SceneNode], id: &str, path: &mut Vec<usize>) -> bool
     false
 }
 
-fn scene_node_at_path<'a>(nodes: &'a [SceneNode], path: &[usize]) -> Option<&'a SceneNode> {
+/// The node at `path` plus the transform from its parent's frame to
+/// the page.
+fn scene_node_at_path<'a>(
+    nodes: &'a [SceneNode],
+    path: &[usize],
+    to_page: DAffine2,
+) -> Option<(&'a SceneNode, DAffine2)> {
     let (&index, rest) = path.split_first()?;
     let node = nodes.get(index)?;
     if rest.is_empty() {
-        Some(node)
+        Some((node, to_page))
     } else {
-        scene_node_at_path(&node.children, rest)
+        scene_node_at_path(&node.children, rest, to_page * own_transform(node))
     }
 }
 
-fn collect_scene_bounds(nodes: &[SceneNode], out: &mut HashMap<String, SceneBounds>) {
+fn collect_scene_bounds(
+    nodes: &[SceneNode],
+    parent_to_page: DAffine2,
+    out: &mut HashMap<String, SceneBounds>,
+) {
     for node in nodes {
+        let to_page = parent_to_page * own_transform(node);
         out.insert(
             node.id.clone(),
             SceneBounds {
                 bounds: node.bounds,
                 aggregate_bounds: node.aggregate_bounds(),
+                to_page,
             },
         );
-        collect_scene_bounds(&node.children, out);
+        collect_scene_bounds(&node.children, to_page, out);
     }
 }
 
@@ -263,6 +301,8 @@ fn index_containers(
         indexed.push(IndexedContainer {
             id: NodeId::new(node.id_str()),
             bounds: scene.bounds,
+            to_page: scene.to_page,
+            from_page: scene.to_page.inverse(),
             flex,
             flex_children,
             children: index_containers(children, scene_bounds, excluded, dragged_id),
@@ -273,19 +313,20 @@ fn index_containers(
 
 fn container_drop_candidate(
     index: &CanvasDropIndex,
-    point: Point2D,
-    dragged_bounds: Rect,
-) -> Option<ContainerDropCandidate> {
-    let container = deepest_container_at(&index.containers, point)?;
+    page_point: DVec2,
+) -> Option<ContainerDropCandidate<'_>> {
+    let container = deepest_container_at(&index.containers, page_point)?;
     let (insert_index, insertion) = if let Some(direction) = container.flex {
-        flex_insert_preview(container, dragged_bounds, direction)
+        flex_insert_preview(
+            container,
+            container.from_page.transform_point2(page_point),
+            direction,
+        )
     } else {
         (0, None)
     };
     Some(ContainerDropCandidate {
-        parent_id: container.id.clone(),
-        bounds: container.bounds,
-        flex: container.flex,
+        container,
         index: insert_index,
         insertion,
     })
@@ -293,31 +334,33 @@ fn container_drop_candidate(
 
 fn deepest_container_at(
     containers: &[IndexedContainer],
-    point: Point2D,
+    page_point: DVec2,
 ) -> Option<&IndexedContainer> {
     let mut hit = None;
     for container in containers {
-        if !rect_contains(container.bounds, point) {
+        let local = to_point(container.from_page.transform_point2(page_point));
+        if !rect_contains(container.bounds, local) {
             continue;
         }
         hit = Some(container);
-        if let Some(deeper) = deepest_container_at(&container.children, point) {
+        if let Some(deeper) = deepest_container_at(&container.children, page_point) {
             hit = Some(deeper);
         }
     }
     hit
 }
 
+/// `local_centre` is the dragged node's centre in `parent`'s frame.
 fn flex_insert_preview(
     parent: &IndexedContainer,
-    dragged_bounds: Rect,
+    local_centre: DVec2,
     direction: FlexDirection,
 ) -> (usize, Option<CanvasOverlayLine>) {
     let vertical = matches!(direction, FlexDirection::Vertical);
     let drag_mid = if vertical {
-        dragged_bounds.origin.y + dragged_bounds.size.y / 2.0
+        local_centre.y as f32
     } else {
-        dragged_bounds.origin.x + dragged_bounds.size.x / 2.0
+        local_centre.x as f32
     };
     let mut index = parent.flex_children.len();
     for (position, bounds) in parent.flex_children.iter().copied().enumerate() {
@@ -388,13 +431,4 @@ fn rect_contains(rect: Rect, point: Point2D) -> bool {
         && point.x <= rect.origin.x + rect.size.x
         && point.y >= rect.origin.y
         && point.y <= rect.origin.y + rect.size.y
-}
-
-fn overlay_rect(rect: Rect) -> CanvasOverlayRect {
-    CanvasOverlayRect::new(
-        rect.origin.x as f64,
-        rect.origin.y as f64,
-        rect.size.x as f64,
-        rect.size.y as f64,
-    )
 }

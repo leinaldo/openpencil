@@ -124,6 +124,8 @@ mod home;
 mod home_brand;
 mod home_document_swap;
 mod home_site_import;
+#[cfg(test)]
+mod rotated_drop_tests;
 pub use home_document_swap::ReplacedHomeDocument;
 mod home_overlays;
 mod home_quick_start;
@@ -681,7 +683,7 @@ pub enum PanelResizeKind {
 /// screen-space delta by the active zoom to get a doc-space
 /// translation, which sidesteps canvas_region offset math (the
 /// offset cancels for incremental deltas).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub(in crate::widget_host) struct NodeDragState {
     pub(in crate::widget_host) last_screen_x: f32,
     pub(in crate::widget_host) last_screen_y: f32,
@@ -701,6 +703,10 @@ pub(in crate::widget_host) struct NodeDragState {
     /// drags. Paint hides the in-flow selected node and draws a
     /// floating copy at these bounds.
     pub(in crate::widget_host) overlay_bounds: Option<Rect>,
+    /// Smart-guide snap currently applied on top of the cursor-driven
+    /// position; the next move takes it back off before re-snapping.
+    pub(in crate::widget_host) snap_dx: f64,
+    pub(in crate::widget_host) snap_dy: f64,
 }
 
 /// Active handle-drag — captures the press cursor anchor + the

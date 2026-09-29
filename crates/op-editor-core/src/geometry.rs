@@ -65,6 +65,25 @@ pub fn aggregate_bounds(node: &PenNode) -> DocRect {
     union_of(children.iter().map(aggregate_bounds))
 }
 
+/// Axis-aligned box around the node as rendered: [`aggregate_bounds`]
+/// turned by the node's own rotation about its centre.
+pub fn rotated_aggregate_bounds(node: &PenNode) -> DocRect {
+    let b = aggregate_bounds(node);
+    let angle = node.base().rotation.unwrap_or(0.0).to_radians();
+    if angle == 0.0 {
+        return b;
+    }
+    let (sin, cos) = angle.sin_cos();
+    let w = b.w * cos.abs() + b.h * sin.abs();
+    let h = b.w * sin.abs() + b.h * cos.abs();
+    DocRect {
+        x: b.x + (b.w - w) / 2.0,
+        y: b.y + (b.h - h) / 2.0,
+        w,
+        h,
+    }
+}
+
 /// Union of an iterator of rects, skipping empty ones. `ZERO` when
 /// every rect is empty.
 pub fn union_of(rects: impl Iterator<Item = DocRect>) -> DocRect {

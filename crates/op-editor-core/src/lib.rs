@@ -404,7 +404,9 @@ pub use fills::{
     first_fill_type, first_image_fill_summary, first_solid_fill_hex, first_solid_fill_opacity,
     first_solid_stroke_hex, node_effects, ImageFillSummary,
 };
-pub use geometry::{aggregate_bounds, own_bounds, union_aggregate_bounds, DocRect};
+pub use geometry::{
+    aggregate_bounds, own_bounds, rotated_aggregate_bounds, union_aggregate_bounds, DocRect,
+};
 pub use git_button_state::GitButton;
 pub use history::{EditorSnapshot, History, HISTORY_CAP};
 pub use history_snapshot::{SharedComponents, SharedDoc};

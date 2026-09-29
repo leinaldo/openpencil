@@ -185,7 +185,10 @@ impl WidgetHost {
             drag.last_screen_x = x;
             drag.last_screen_y = y;
         }
-        if self.editor_state.translate_selected(dx as f64, dy as f64) {
+        if self
+            .editor_state
+            .translate_selected_world(dx as f64, dy as f64)
+        {
             // Incremental scene patch instead of a full serde reconversion per
             // moved pixel (mirrors the native host). A plain node drag only
             // moves absolute-positioned nodes, so translate just those scene
@@ -193,8 +196,12 @@ impl WidgetHost {
             // fast path when a reconversion is already pending
             // (`editor_state_dirty`).
             if !self.editor_state_dirty {
-                let ids = drag_flow::drag_scene_translate_ids(&self.editor_state);
-                let _ = self.layout_scene.translate_nodes(&ids, dx, dy);
+                let _ = drag_flow::translate_drag_scene(
+                    &mut self.layout_scene,
+                    &self.editor_state,
+                    dx as f64,
+                    dy as f64,
+                );
                 // The scene is now patched away from the last cached build while
                 // `scene_cache.last` still holds the pre-drag inputs. Invalidate
                 // so a later refresh always rebuilds — otherwise a doc returning

@@ -29,15 +29,23 @@ pub(super) fn paint_drop_indicator(
         let rect = to_screen_rect(target);
         let fill = Color { a: 0.08, ..primary };
         let stroke = Color { a: 0.45, ..primary };
+        let rotated = rotate_about_centre(cx, rect, target.rotation);
         cx.backend.fill_rect(rect, fill);
         cx.backend.stroke_rect(rect, stroke, 1.0);
+        if rotated {
+            cx.backend.restore();
+        }
     }
     if paint_ghost {
         let ghost = to_screen_rect(indicator.ghost);
         let ghost_fill = Color { a: 0.10, ..primary };
         let ghost_stroke = Color { a: 0.85, ..primary };
+        let rotated = rotate_about_centre(cx, ghost, indicator.ghost.rotation);
         cx.backend.fill_rect(ghost, ghost_fill);
         paint_dashed_rect(cx, ghost, ghost_stroke, 1.25);
+        if rotated {
+            cx.backend.restore();
+        }
     }
     if let Some(line) = indicator.insertion {
         let from = Point2D::new(
@@ -50,6 +58,22 @@ pub(super) fn paint_drop_indicator(
         );
         cx.backend.stroke_line(from, to, primary, 2.0);
     }
+}
+
+/// Push a rotation about `rect`'s centre; the caller restores when true.
+fn rotate_about_centre(cx: &mut PaintCx<'_>, rect: Rect, radians: f64) -> bool {
+    if radians.abs() <= f64::from(f32::EPSILON) {
+        return false;
+    }
+    cx.backend.save();
+    cx.backend.rotate(
+        radians as f32,
+        Point2D::new(
+            rect.origin.x + rect.size.x / 2.0,
+            rect.origin.y + rect.size.y / 2.0,
+        ),
+    );
+    true
 }
 
 /// Stroke a dashed rectangle as 4 dashed edges (4 px on / 4 px off,

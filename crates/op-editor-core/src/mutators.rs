@@ -410,6 +410,17 @@ impl EditorState {
     /// conditions down the recursion as it descends, so the whole tree
     /// is visited exactly once regardless of selection size.
     pub fn translate_selected(&mut self, dx: f64, dy: f64) -> bool {
+        self.translate_selected_in(dx, dy, false)
+    }
+
+    /// [`Self::translate_selected`] for a page-space delta (a canvas
+    /// drag): each node moves by the delta mapped into its parent's
+    /// rotated / flipped frame, so it tracks the cursor on screen.
+    pub fn translate_selected_world(&mut self, dx: f64, dy: f64) -> bool {
+        self.translate_selected_in(dx, dy, true)
+    }
+
+    fn translate_selected_in(&mut self, dx: f64, dy: f64, world: bool) -> bool {
         if self.selection.set.is_empty() || (dx == 0.0 && dy == 0.0) {
             return false;
         }
@@ -429,8 +440,11 @@ impl EditorState {
         }
         let editable_set: HashSet<&str> = editable.iter().map(NodeId::as_str).collect();
         let children = self.active_children_mut();
-        let translated =
-            walkers::translate_editable_subtree(children, &editable_set, dx, dy, false, false);
+        let translated = if world {
+            walkers::translate_editable_subtree_world(children, &editable_set, dx, dy)
+        } else {
+            walkers::translate_editable_subtree(children, &editable_set, dx, dy, false, false)
+        };
         if translated {
             self.mark_document_changed();
         }

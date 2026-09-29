@@ -162,7 +162,7 @@ impl WidgetHostNative {
     /// Snap node drags to nearby top-level edge/centre guides.
     fn apply_smart_guides(&mut self) -> (f64, f64) {
         use op_editor_core::{
-            aggregate_bounds, align_guides::compute_alignment_guides, PenNodeExt,
+            align_guides::compute_alignment_guides, rotated_aggregate_bounds, PenNodeExt,
         };
         /// Snap range in doc-px.
         const GUIDE_THRESHOLD: f64 = 6.0;
@@ -181,7 +181,7 @@ impl WidgetHostNative {
         let mut moving = None;
         let mut others = Vec::new();
         for node in self.editor_state.active_children() {
-            let b = aggregate_bounds(node);
+            let b = rotated_aggregate_bounds(node);
             let aabb = [b.x, b.y, b.w, b.h];
             if node.id_str() == selected {
                 moving = Some(aabb);
@@ -274,9 +274,7 @@ impl WidgetHostNative {
         }
         // Net doc-space travel since the press — the release commit
         // uses it to locate dropped flex children (which never
-        // doc-translate during the drag). Recomputed from the press
-        // anchor so smart-guide rewinds of `last_screen_*` can't
-        // double-count.
+        // doc-translate during the drag).
         if let Some(d) = self.node_drag.as_mut() {
             d.total_dx = total_dx;
             d.total_dy = total_dy;
@@ -301,21 +299,28 @@ impl WidgetHostNative {
                 drag.last_screen_x = x;
                 drag.last_screen_y = y;
             }
-            let translated = self.editor_state.translate_selected(dx as f64, dy as f64);
+            // Take the previous snap back off so the node keeps tracking the
+            // cursor once it leaves a guide; the guide pass re-snaps below.
+            let step_x = dx as f64 - drag.snap_dx;
+            let step_y = dy as f64 - drag.snap_dy;
+            let translated = self.editor_state.translate_selected_world(step_x, step_y);
             let (snap_dx, snap_dy) = if translated {
                 self.apply_smart_guides()
             } else {
                 self.editor_state.editor_ui.active_guides.clear();
                 (0.0, 0.0)
             };
-            let scene_dx = dx as f64 + snap_dx;
-            let scene_dy = dy as f64 + snap_dy;
+            if let Some(drag) = self.node_drag.as_mut() {
+                drag.snap_dx = snap_dx;
+                drag.snap_dy = snap_dy;
+            }
             if translated && !self.editor_state_dirty {
-                let ids =
-                    op_editor_ui::widgets::drag_flow::drag_scene_translate_ids(&self.editor_state);
-                let _ = self
-                    .layout_scene
-                    .translate_nodes(&ids, scene_dx as f32, scene_dy as f32);
+                let _ = op_editor_ui::widgets::drag_flow::translate_drag_scene(
+                    &mut self.layout_scene,
+                    &self.editor_state,
+                    step_x + snap_dx,
+                    step_y + snap_dy,
+                );
                 // The scene is now patched away from the last cached build, but
                 // `scene_cache.last` still reflects the pre-drag inputs. Invalidate
                 // it so a later refresh always rebuilds — otherwise, if the doc
@@ -326,14 +331,6 @@ impl WidgetHostNative {
                 self.scene_cache.invalidate();
             } else if translated {
                 self.mark_dirty();
-            }
-            if let Some(drag) = self.node_drag.as_mut() {
-                if snap_dx != 0.0 {
-                    drag.last_screen_x = prev_screen_x;
-                }
-                if snap_dy != 0.0 {
-                    drag.last_screen_y = prev_screen_y;
-                }
             }
             if let Some(drag) = self.node_drag {
                 self.apply_live_node_drag_preview(&drag);
