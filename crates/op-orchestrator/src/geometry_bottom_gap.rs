@@ -100,9 +100,44 @@ pub(crate) fn repair_mobile_bottom_breathing(sink: &mut dyn DocSink, root_id: &s
         return false;
     }
     padding[2] = TARGET_BOTTOM_GAP;
-    sink.apply(EditorCommand::PatchNodeData {
+    let padded = sink.apply(EditorCommand::PatchNodeData {
         node_id: NodeId::new(root_id.to_string()),
         patch_json: serde_json::json!({ "padding": padding }).to_string(),
+        page_id: None,
+    });
+    padded | lengthen_to_bottom_gap(sink, root_id)
+}
+
+/// A numeric screen height is authoritative, so bottom padding only makes
+/// room when a flexible child can give it up. Fixed-height content keeps its
+/// bottom edge; lengthen the screen by whatever room is still missing.
+fn lengthen_to_bottom_gap(sink: &mut dyn DocSink, root_id: &str) -> bool {
+    let rects = resolved_rects(sink.state());
+    let id = NodeId::new(root_id.to_string());
+    let Some(root) = op_editor_core::walkers::find_node(sink.state().active_children(), &id) else {
+        return false;
+    };
+    let Ok(value) = serde_json::to_value(root) else {
+        return false;
+    };
+    let (Some(gap), Some(height)) = (
+        resolved_mobile_bottom_gap(&value, &rects),
+        value.get("height").and_then(Value::as_f64),
+    ) else {
+        return false;
+    };
+    let missing = TARGET_BOTTOM_GAP - gap;
+    if missing <= 0.5 {
+        return false;
+    }
+    sink.apply(EditorCommand::UpdateNode {
+        node_id: id,
+        x: None,
+        y: None,
+        width: None,
+        height: Some((height + missing).ceil() as i32),
+        name: None,
+        fill_hex: None,
         page_id: None,
     })
 }

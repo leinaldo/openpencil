@@ -118,14 +118,6 @@ pub(super) fn numeric_padding_sides(v: &Value) -> Option<[f64; 4]> {
     }
 }
 
-/// Known vertical padding that can legitimately participate in post-layout
-/// content reconciliation. Negative values are not useful breathing room and
-/// therefore cannot widen a spill tolerance.
-pub(super) fn numeric_vertical_padding(v: &Value) -> Option<f64> {
-    let [top, _, bottom, _] = numeric_padding_sides(v)?;
-    Some(top.max(0.0) + bottom.max(0.0))
-}
-
 /// Sum of a frame's LEFT + RIGHT padding — the schema authors `padding` as a
 /// number (all sides), `[vertical, horizontal]`, or `[top, right, bottom,
 /// left]`. The overflow math must compare column widths against the row's

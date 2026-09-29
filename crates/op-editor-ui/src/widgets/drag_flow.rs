@@ -292,3 +292,48 @@ pub fn translate_drag_scene(
     }
     moved
 }
+
+/// Layer-panel drop that changes `source`'s parent: the x / y (relative
+/// to the new parent) and own rotation (degrees) that keep it rendering
+/// where it does now, like a canvas drop. `None` when the parent stays.
+/// `scene` is the pre-move layout.
+pub fn layer_drop_pose(
+    state: &EditorState,
+    scene: &LayoutScene,
+    source: &NodeId,
+    anchor: &NodeId,
+    position: super::DropPosition,
+) -> Option<(f64, f64, f64)> {
+    use super::scene_transform::{
+        centre, find_with_parent_to_page, own_rotation_in, own_transform,
+    };
+    let children = state.active_children();
+    let new_parent = match position {
+        super::DropPosition::Into => Some(anchor.clone()),
+        super::DropPosition::Before | super::DropPosition::After => {
+            op_editor_core::drag_mutators::parent_of(children, anchor)
+        }
+    };
+    if op_editor_core::drag_mutators::parent_of(children, source) == new_parent {
+        return None;
+    }
+    let page = scene.active_page()?;
+    let (node, parent_to_page) = find_with_parent_to_page(&page.children, source.as_str())?;
+    let node_to_page = parent_to_page * own_transform(node);
+    let (frame_to_page, origin) = match &new_parent {
+        Some(id) => {
+            let (parent, to_page) = find_with_parent_to_page(&page.children, id.as_str())?;
+            (to_page * own_transform(parent), parent.bounds.origin)
+        }
+        None => (glam::DAffine2::IDENTITY, crate::Point2D::new(0.0, 0.0)),
+    };
+    let bounds = node.aggregate_bounds();
+    let local = frame_to_page
+        .inverse()
+        .transform_point2(node_to_page.transform_point2(centre(bounds)));
+    Some((
+        local.x - (bounds.size.x / 2.0 + origin.x) as f64,
+        local.y - (bounds.size.y / 2.0 + origin.y) as f64,
+        own_rotation_in(node, node_to_page, frame_to_page),
+    ))
+}

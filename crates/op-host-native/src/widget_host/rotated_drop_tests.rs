@@ -2,6 +2,7 @@
 //! ancestors: the drop preview, the drop hit-test, the reparent commit
 //! and smart-guide snapping must all agree with the rendered geometry,
 //! and the layer tree must show the new parent as soon as the drop lands.
+//! A layer-panel drop into another container keeps the rendered pose too.
 //!
 //! Geometry: zoom 1 / pan 0, chat minimized, fixtures at doc x ≥ 420 so
 //! presses land on the canvas. `world()` replays the scene's ancestor
@@ -413,5 +414,77 @@ fn dropping_into_a_container_refreshes_the_layer_tree_immediately() {
         layer_depth(&host, "A"),
         Some(1),
         "A must be listed under B right after the drop"
+    );
+}
+
+/// Drop `source` into `container` through the layer panel's Into band.
+fn layer_panel_drop_into(host: &mut WidgetHostNative, source: &str, container: &str) {
+    use op_editor_ui::widgets::{DropPosition, LayerPanel};
+    host.mark_paint_dirty_for_test();
+    host.refresh_layout_scene();
+    let rect = host.layers_content_rect(W, H);
+    let panel = LayerPanel::from_editor_with_drag_source(host.editor_state(), &NodeId::new(source));
+    let mut y = rect.origin.y;
+    let at = loop {
+        assert!(
+            y < rect.origin.y + rect.size.y,
+            "no Into-{container} band in the layer panel"
+        );
+        let p = op_editor_ui::Point2D::new(rect.origin.x + 40.0, y);
+        if panel.drop_target_at(rect, p).is_some_and(|t| {
+            t.anchor.as_str() == container && matches!(t.position, DropPosition::Into)
+        }) {
+            break p;
+        }
+        y += 1.0;
+    };
+    let drag = crate::widget_host::LayerDragState {
+        source: NodeId::new(source),
+        start_y: at.y - 60.0,
+        current_x: at.x,
+        current_y: at.y,
+        active: true,
+    };
+    assert!(host.commit_layer_drag(drag, W, H));
+}
+
+#[test]
+fn layer_panel_drop_into_a_rotated_frame_keeps_the_rendered_pose() {
+    // A already renders inside B, so B keeps its size (a free frame grows
+    // to fit an overflowing child, which moves its rotation pivot).
+    let mut host = host_with(
+        r##"{"version":"1.0.0","children":[
+          {"type":"frame","id":"B","x":480,"y":80,"width":220,"height":160,"rotation":45,"layout":"none","children":[]},
+          {"type":"rectangle","id":"A","x":580,"y":150,"width":40,"height":30,"rotation":20}]}"##,
+    );
+    let (before, before_angle) = world(&mut host, "A");
+    layer_panel_drop_into(&mut host, "A", "B");
+    assert_eq!(parent(&host, "A"), Some(NodeId::new("B")));
+    let (after, after_angle) = world(&mut host, "A");
+    // Layout snaps x / y to whole px; under B's 45° that is < 1 px.
+    assert!(
+        (after.0 - before.0).abs() < 1.0 && (after.1 - before.1).abs() < 1.0,
+        "A must not jump when moved into B from the layer panel: {before:?} -> {after:?}"
+    );
+    assert_angle(
+        after_angle,
+        before_angle,
+        "A must not spin when moved into B",
+    );
+}
+
+#[test]
+fn layer_panel_drop_into_a_plain_frame_keeps_the_position() {
+    let mut host = host_with(
+        r##"{"version":"1.0.0","children":[
+          {"type":"frame","id":"B","x":480,"y":80,"width":220,"height":160,"layout":"none","children":[]},
+          {"type":"rectangle","id":"A","x":550,"y":420,"width":80,"height":50}]}"##,
+    );
+    layer_panel_drop_into(&mut host, "A", "B");
+    assert_eq!(parent(&host, "A"), Some(NodeId::new("B")));
+    assert_eq!(
+        node_xy(&host, "A"),
+        (70.0, 340.0),
+        "x / y become relative to B"
     );
 }

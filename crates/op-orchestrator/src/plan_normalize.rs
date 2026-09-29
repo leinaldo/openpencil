@@ -103,6 +103,19 @@ fn strip_status_bar_fragments(text: &str) -> Option<String> {
     }
 }
 
+/// Whether the request itself fixes the root height — stated dimensions, a
+/// continuation into existing screens, or a fixed board (deck / card). Such a
+/// root keeps its height instead of growing to its content.
+pub(crate) fn request_fixes_root_height(req: &DesignRequest) -> bool {
+    crate::request_dimensions::requested_root_dimensions(&req.prompt)
+        .is_some_and(|dimensions| dimensions.height.is_some())
+        || plan_continuation_contract::promised_screen_names(req).is_some()
+        || matches!(
+            crate::design_type::detect_design_type(&req.prompt).type_,
+            crate::design_type::DesignType::Slides | crate::design_type::DesignType::Card
+        )
+}
+
 /// 就地规范化 `plan`:
 /// - 一次性判定 `is_mobile`(根 frame 宽度);
 /// - 移动端剔除 plan 自带的状态栏 subtask(状态栏改由 scaffold 注入);
@@ -115,8 +128,7 @@ pub fn normalize(plan: &mut OrchestratorPlan, req: &DesignRequest) -> NormInfo {
     let requested_dimensions_applied =
         plan_normalize_dimensions::apply_requested_root_dimensions(plan, req);
     let continuation_contract_applied = plan_continuation_contract::apply(plan, req);
-    let preserve_requested_root_height =
-        requested_dimensions_applied || continuation_contract_applied;
+    let preserve_requested_root_height = request_fixes_root_height(req);
 
     // A deck's board is the projector: 16:9, fixed, and never resized to fit
     // its content. Without this, `adjust_root_height_to_content` grew a cover
@@ -150,7 +162,6 @@ pub fn normalize(plan: &mut OrchestratorPlan, req: &DesignRequest) -> NormInfo {
         plan.root_frame.width = preset.width;
         plan.root_frame.height = preset.root_height;
     }
-    let preserve_requested_root_height = preserve_requested_root_height || is_deck || is_card;
 
     let folded_side_progress_rail = plan_normalize_side_rail::fold_side_progress_rail(plan);
     tracing::info!(

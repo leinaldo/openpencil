@@ -16,7 +16,7 @@ Every mobile screen accounts for three logical layers: status chrome, app conten
 and optional bottom navigation. These are architectural layers, not a requirement
 to wrap every content section inside one padded App Content frame.
 
-Screen-height contract: use numeric 390-393×844 as a temporary construction seed so an empty skeleton is visible. Before finishing, a normal content-driven mobile page switches its root to `height="fit_content"` (Hug), matching its completed flow. Keep a numeric viewport only when the user explicitly requested that viewport/device frame or the design deliberately contains one clipped viewport body that must consume remaining height.
+Screen-height contract: use numeric 390-393×844 as a temporary construction seed so an empty skeleton is visible. A numeric root height is fixed — content past it is clipped, not grown around — so never let built content run below the seed: raise the seed (or switch to Hug) as soon as sections pass it. Before finishing, a normal content-driven mobile page switches its root to `height="fit_content"` (Hug), matching its completed flow. Keep a numeric viewport only when the user explicitly requested that viewport/device frame or the design deliberately contains one clipped viewport body that must consume remaining height.
 
 ## 0) EXPRESSION LAYER — where the look comes from
 

@@ -281,6 +281,24 @@ impl EditorState {
         true
     }
 
+    /// Re-place `id` after a tree move: `x` / `y` in its parent's frame
+    /// and its own rotation (degrees). A flow child of an auto-layout
+    /// parent keeps leaving its position to layout.
+    pub fn set_node_pose(&mut self, id: &NodeId, x: f64, y: f64, rotation_deg: f64) -> bool {
+        let in_flow = walkers::is_flow_child_of_flex(self.active_children(), id);
+        let Some(node) = walkers::find_node_mut(self.active_children_mut(), id) else {
+            return false;
+        };
+        let base = node.base_mut();
+        if !in_flow || base.x.is_some() || base.y.is_some() {
+            base.x = Some(x);
+            base.y = Some(y);
+        }
+        base.rotation = (rotation_deg.abs() > 1e-9).then_some(rotation_deg);
+        self.mark_document_changed();
+        true
+    }
+
     /// Move a dragged node to a resolved canvas drop target,
     /// preserving the visual origin supplied by the host.
     ///

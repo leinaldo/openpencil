@@ -4,7 +4,7 @@
 //! itself on them being idle) and before the base canvas tier. Each one
 //! owns the cursor for the duration of its gesture.
 
-use super::helpers::{resize_bounds, PANEL_MAX_WIDTH, PANEL_MIN_WIDTH};
+use super::helpers::{PANEL_MAX_WIDTH, PANEL_MIN_WIDTH};
 use super::input::rect_to_doc_rect;
 use super::{PanelResizeKind, WidgetHostNative};
 use op_editor_ui::widgets::host_canvas_geometry as canvas_geometry;
@@ -67,7 +67,17 @@ impl WidgetHostNative {
         if let Some(drag) = self.rotate_drag {
             self.refresh_layout_scene();
             let cursor_angle = (y - drag.center_screen_y).atan2(x - drag.center_screen_x);
-            let new_rotation = drag.start_rotation + (cursor_angle - drag.start_cursor_angle);
+            // A mirrored chain turns the node's own rotation the other way
+            // on screen, so the sweep feeds in reversed.
+            let sweep = if op_editor_ui::widgets::node_renders_mirrored(
+                &self.layout_scene,
+                self.editor_state.selection.anchor.as_str(),
+            ) {
+                drag.start_cursor_angle - cursor_angle
+            } else {
+                cursor_angle - drag.start_cursor_angle
+            };
+            let new_rotation = drag.start_rotation + sweep;
             self.editor_state.set_selected_rotation(new_rotation);
             self.finish_live_rotation_update(new_rotation);
             return Some(true);
@@ -85,15 +95,28 @@ impl WidgetHostNative {
             let zoom = self.editor_state.viewport.zoom.max(0.0001);
             let dx = (x - drag.start_screen_x) / zoom;
             let dy = (y - drag.start_screen_y) / zoom;
-            let new_bounds = resize_bounds(drag.start_bounds, drag.handle, dx, dy);
-            let new_x = drag.handle.moves_left_edge().then(|| {
-                drag.start_authored_x.unwrap_or(0.0)
-                    + f64::from(new_bounds.origin.x - drag.start_bounds.origin.x)
-            });
-            let new_y = drag.handle.moves_top_edge().then(|| {
-                drag.start_authored_y.unwrap_or(0.0)
-                    + f64::from(new_bounds.origin.y - drag.start_bounds.origin.y)
-            });
+            let new_bounds = op_editor_ui::widgets::resize_bounds_on_page(
+                &self.layout_scene,
+                self.editor_state.selection.anchor.as_str(),
+                drag.start_bounds,
+                drag.handle,
+                dx,
+                dy,
+            );
+            // A rotated node's resize also shifts the origin to pin the
+            // opposite edge on screen, whichever handle is dragged.
+            let new_x = (drag.handle.moves_left_edge()
+                || new_bounds.origin.x != drag.start_bounds.origin.x)
+                .then(|| {
+                    drag.start_authored_x.unwrap_or(0.0)
+                        + f64::from(new_bounds.origin.x - drag.start_bounds.origin.x)
+                });
+            let new_y = (drag.handle.moves_top_edge()
+                || new_bounds.origin.y != drag.start_bounds.origin.y)
+                .then(|| {
+                    drag.start_authored_y.unwrap_or(0.0)
+                        + f64::from(new_bounds.origin.y - drag.start_bounds.origin.y)
+                });
             self.editor_state.resize_selected_bounds(
                 rect_to_doc_rect(new_bounds),
                 drag.handle.resize_axes(),

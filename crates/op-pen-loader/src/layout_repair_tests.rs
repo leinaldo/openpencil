@@ -87,11 +87,11 @@ fn implicit_horizontal_row_places_nested_text_after_status_icon() {
 }
 
 #[test]
-fn overflowing_fixed_width_horizontal_wrapper_expands_before_parent_space_between() {
-    // Desktop transaction rows generated a fixed-width right-side wrapper
-    // from stale content estimates. Its visible children are wider than the
-    // wrapper, so the parent space-between row must use the expanded child
-    // width or the amount column renders outside the table border.
+fn overflowing_fit_content_horizontal_wrapper_expands_before_parent_space_between() {
+    // A content-following right-side wrapper whose visible children are
+    // wider than taffy resolved it: the parent space-between row must use
+    // the expanded child width or the amount column renders outside the
+    // table border.
     let src = r##"{
       "version":"1.0.0","pages":[{"id":"p","name":"P","children":[
         {"type":"frame","id":"item","width":360,"height":60,
@@ -100,7 +100,7 @@ fn overflowing_fixed_width_horizontal_wrapper_expands_before_parent_space_betwee
            {"type":"frame","id":"left","x":20,"y":20,
             "width":60,"height":20},
            {"type":"frame","id":"right","x":220,"y":19,
-            "width":120,"height":22,"gap":20,"alignItems":"center",
+            "width":"fit_content","height":22,"gap":20,"alignItems":"center",
             "children":[
               {"type":"frame","id":"badge","x":0,"y":0,
                "width":100,"height":22,
@@ -151,19 +151,18 @@ fn legacy_fixed_width_text_badge_centers_label_like_badge_builder() {
 }
 
 #[test]
-fn non_clipped_fixed_height_layout_containers_expand_to_overflowing_children() {
-    // Legacy generated files sometimes persisted numeric heights from an
-    // optimistic text estimate. When the resolved child bounds are taller,
-    // open containers should grow and parent stacks should reflow instead
-    // of letting the final line cross the card border.
+fn content_following_layout_containers_expand_to_overflowing_children() {
+    // When the resolved child bounds are taller than taffy sized a
+    // content-following container, it grows and parent stacks reflow
+    // instead of letting the final line cross the card border.
     let src = r##"{
       "version":"1.0.0","pages":[{"id":"p","name":"P","children":[
         {"type":"frame","id":"root","width":200,"height":200,
          "layout":"vertical","gap":10,
          "children":[
-          {"type":"frame","id":"row","width":100,"height":20,
+          {"type":"frame","id":"row","width":100,"height":"fit_content",
            "children":[
-            {"type":"frame","id":"stack","x":0,"y":0,"width":100,"height":20,
+            {"type":"frame","id":"stack","x":0,"y":0,"width":100,"height":"fit_content",
              "layout":"vertical","gap":5,
              "children":[
               {"type":"rectangle","id":"a","x":0,"y":0,"width":10,"height":18},
@@ -202,9 +201,9 @@ fn clipped_vertical_root_with_fixed_height_clips_overflow_like_pencil() {
         {"type":"frame","id":"root","width":200,"height":50,"clip":true,
          "layout":"vertical","gap":10,
          "children":[
-          {"type":"frame","id":"row","width":100,"height":20,
+          {"type":"frame","id":"row","width":100,"height":"fit_content",
            "children":[
-            {"type":"frame","id":"stack","x":0,"y":0,"width":100,"height":20,
+            {"type":"frame","id":"stack","x":0,"y":0,"width":100,"height":"fit_content",
              "layout":"vertical","gap":5,
              "children":[
               {"type":"rectangle","id":"a","x":0,"y":0,"width":10,"height":18},
@@ -534,4 +533,47 @@ fn absent_layout_still_infers_a_horizontal_row() {
     let b = scene.pages[0].find("b").expect("b");
     assert_eq!(a.bounds.origin.x, 0.0);
     assert_eq!(b.bounds.origin.x, 110.0);
+}
+
+#[test]
+fn fixed_size_free_frame_keeps_its_size_when_a_child_overflows() {
+    // A numeric size is authoritative: the overflowing child spills out
+    // instead of growing the frame (a rotated frame turns about its bounds
+    // centre, so growth would also move the frame and everything in it).
+    let src = r##"{
+      "version":"1.0.0","pages":[{"id":"p","name":"P","children":[
+        {"type":"frame","id":"free","x":480,"y":80,"width":220,"height":160,
+         "layout":"none",
+         "children":[
+          {"type":"rectangle","id":"out","x":270,"y":250,"width":80,"height":50}
+         ]}
+      ]}],"children":[]
+    }"##;
+    let scene = editor_state_to_layout_scene(&state_from(src));
+    let frame = scene.pages[0].find("free").expect("free frame");
+    let out = scene.pages[0].find("out").expect("overflowing child");
+
+    assert_eq!(frame.bounds.size.x, 220.0);
+    assert_eq!(frame.bounds.size.y, 160.0);
+    assert_eq!(out.bounds.origin.x, 750.0);
+    assert_eq!(out.bounds.origin.y, 330.0);
+}
+
+#[test]
+fn fixed_size_frame_tool_frame_keeps_its_height_when_a_child_overflows() {
+    // The Frame tool writes a numeric size, a white fill and no `layout`.
+    let src = r##"{
+      "version":"1.0.0","pages":[{"id":"p","name":"P","children":[
+        {"type":"frame","id":"drawn","x":100,"y":100,"width":200,"height":120,
+         "fill":[{"type":"solid","color":"#FFFFFF"}],
+         "children":[
+          {"type":"rectangle","id":"low","x":20,"y":100,"width":60,"height":80}
+         ]}
+      ]}],"children":[]
+    }"##;
+    let scene = editor_state_to_layout_scene(&state_from(src));
+    let frame = scene.pages[0].find("drawn").expect("drawn frame");
+
+    assert_eq!(frame.bounds.size.x, 200.0);
+    assert_eq!(frame.bounds.size.y, 120.0);
 }

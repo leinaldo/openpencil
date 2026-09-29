@@ -29,6 +29,10 @@ docs/
 !/docs/testing/
 /docs/testing/*
 !/docs/testing/p2p-collaboration-platform-acceptance.md
+!/docs/articles/
+/docs/articles/*
+!/docs/articles/rotated-canvas-interactions.md
+!/docs/articles/rotated-canvas-interactions/
 
 # The bare `docs/` pattern above also shadows this test-fixture dir, which
 # MUST be tracked (the CI diagnostics-golden drift guard reads it).

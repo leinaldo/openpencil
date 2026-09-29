@@ -47,8 +47,9 @@ mod overlays;
 #[cfg(test)]
 use builders::generating_label_text;
 pub use hit_test::{
-    arc_handle_positions, path_handle_positions, rotate_point, rotation_corner_at_point,
-    selection_handle_at_point, ArcHandle, SelectionHandle, PATH_HANDLE_GHOST_PX,
+    arc_handle_positions, path_handle_positions, resize_bounds_on_page, rotate_point,
+    rotation_corner_at_point, selection_handle_at_point, selection_handle_screen_angle, ArcHandle,
+    SelectionHandle, PATH_HANDLE_GHOST_PX,
 };
 pub(super) use overlays::paint_dashed_rect;
 use overlays::paint_drop_indicator;

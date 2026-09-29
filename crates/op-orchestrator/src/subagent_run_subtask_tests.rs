@@ -616,3 +616,62 @@ fn run_subtask_preserves_first_class_widget_style_and_interaction_props() {
     assert_eq!(slider["step"].as_f64(), Some(0.5));
     assert_eq!(slider["value"].as_f64(), Some(5.5));
 }
+
+/// A 390x844 scaffold root with one section streaming into it whose content
+/// runs well past the preset height.
+fn run_tall_section_into_scaffold_root(prompt: &str) -> f64 {
+    let llm = ScriptedLlm::new(vec![ScriptResponse::Text(
+        r#"I(null, {"type":"frame","name":"Hero","width":"fill_container","layout":"vertical",
+             "children":[{"type":"rectangle","name":"Tall Visual","width":390,"height":1200},
+                         {"type":"text","content":"Hello","fontSize":18}]});"#
+            .into(),
+    )]);
+    let mut sink = VecDocSink::new();
+    sink.state.doc.children = vec![serde_json::from_value(serde_json::json!({
+        "type": "frame", "id": "root", "name": "Screen", "x": 0, "y": 0,
+        "width": 390, "height": 844, "layout": "vertical", "children": []
+    }))
+    .expect("root parses")];
+    let mut task = subtask();
+    task.parent_frame_id = Some("root".into());
+    task.region.width = 390.0;
+    let mut request = req();
+    request.prompt = prompt.into();
+
+    let outcome = block_on(run_subtask(
+        &task,
+        &plan(),
+        &request,
+        &llm,
+        &mut sink,
+        &AbortFlag::new(),
+        false,
+        false,
+    ));
+
+    assert!(
+        outcome.error.is_none(),
+        "subtask must land: {:?}",
+        outcome.error
+    );
+    op_editor_core::walkers::find_node(sink.state.active_children(), &NodeId::new("root"))
+        .and_then(|root| root.height_px())
+        .expect("numeric root height")
+}
+
+#[test]
+fn run_subtask_lengthens_the_scaffold_root_as_a_section_lands_past_it() {
+    // A numeric root height no longer grows around its content, so without
+    // this the section's lower 356px would stay clipped until finalize.
+    let height = run_tall_section_into_scaffold_root("a long landing page");
+    assert!(
+        height >= 1200.0,
+        "root must reach the section bottom; got {height}"
+    );
+}
+
+#[test]
+fn run_subtask_keeps_a_root_height_the_request_fixed() {
+    let height = run_tall_section_into_scaffold_root("Design a 390×844 login screen");
+    assert_eq!(height, 844.0, "a requested root height is a contract");
+}

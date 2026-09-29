@@ -56,7 +56,7 @@ fn diagnostics_skip_jam_for_all_fill_tab_cells_but_keep_mixed_jams() {
 fn diagnostics_skip_single_line_pill_text_overflow() {
     let chip = insert_root(json!({
         "type":"frame","id":"root","name":"Root","width":180,"height":"fit_content","layout":"vertical","children":[
-            {"type":"frame","id":"chip","name":"Guest Chip","width":60,"height":40,"layout":"horizontal","cornerRadius":9999,"children":[
+            {"type":"frame","id":"chip","name":"Guest Chip","height":40,"layout":"horizontal","cornerRadius":9999,"children":[
                 {"type":"text","id":"guest-text","name":"Guest Text","content":"2 Guests, 1 Room","width":"fit_content","textGrowth":"auto"}
             ]}
         ]

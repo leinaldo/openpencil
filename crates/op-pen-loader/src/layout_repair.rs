@@ -569,34 +569,23 @@ fn height_can_follow_content(props: &ContainerProps) -> bool {
     can_follow_content(props.height.as_ref())
 }
 
+// A numeric size is authoritative: an open frame lets overflowing children
+// spill instead of growing around them (design-tool semantics — a rotated
+// frame also turns about its bounds centre, so growth would move it). Only
+// content-following axes are repaired to their children.
 fn height_can_expand_to_content(props: &ContainerProps) -> bool {
-    height_can_follow_content(props) || props.clip_content != Some(true)
+    height_can_follow_content(props)
 }
 
 fn height_can_expand_to_content_or_root(props: &ContainerProps, is_root: bool) -> bool {
-    // A clipped, explicitly-sized frame must honour its declared height even at
-    // the root: Pencil clips a fixed-height screen whose content overflows
-    // rather than growing the frame to fit it. Without this guard the
-    // `|| is_root` override grew a `height: 900, clip: true` screen to its
-    // ~950px content height (off-by-50 vs Pencil's clipped baseline). The
-    // non-root path already refuses via `height_can_expand_to_content`; mirror
-    // it for the root instead of blanket-allowing expansion.
-    if matches!(props.height.as_ref(), Some(SizingBehavior::Number(_)))
-        && props.clip_content == Some(true)
-    {
-        return height_can_expand_to_content(props);
-    }
-    height_can_expand_to_content(props) || is_root
+    // A root has no parent to fill, so a non-numeric height (e.g.
+    // `fill_container`) hugs its content; a numeric one stays as declared.
+    height_can_expand_to_content(props)
+        || (is_root && !matches!(props.height.as_ref(), Some(SizingBehavior::Number(_))))
 }
 
 fn width_can_expand_to_content(props: &ContainerProps) -> bool {
-    match props.width.as_ref() {
-        None | Some(SizingBehavior::Keyword(SizingKeyword::FitContent)) => true,
-        Some(SizingBehavior::Number(_)) => {
-            props.clip_content != Some(true) && props.fill.is_none() && props.stroke.is_none()
-        }
-        _ => false,
-    }
+    can_follow_content(props.width.as_ref())
 }
 
 fn can_follow_content(sizing: Option<&SizingBehavior>) -> bool {

@@ -9,31 +9,12 @@ use crate::types::DesignRequest;
 /// continuations, even when planning returned syntactically valid but generic
 /// desktop output.
 pub(super) fn apply(plan: &mut OrchestratorPlan, req: &DesignRequest) -> bool {
-    let Some(context) = req.continuation_context.as_ref() else {
+    let (Some(context), Some(screen_names)) = (
+        req.continuation_context.as_ref(),
+        promised_screen_names(req),
+    ) else {
         return false;
     };
-    if !context.screen_width.is_finite()
-        || !context.screen_height.is_finite()
-        || context.screen_width <= 0.0
-        || context.screen_height <= 0.0
-    {
-        return false;
-    }
-
-    let mut screen_names = Vec::<String>::new();
-    for raw in &context.screen_names {
-        let name = raw.trim();
-        if !name.is_empty()
-            && !screen_names
-                .iter()
-                .any(|existing| existing.eq_ignore_ascii_case(name))
-        {
-            screen_names.push(name.to_string());
-        }
-    }
-    if screen_names.is_empty() {
-        return false;
-    }
 
     plan.root_frame.width = context.screen_width;
     plan.root_frame.height = context.screen_height;
@@ -125,4 +106,29 @@ pub(super) fn apply(plan: &mut OrchestratorPlan, req: &DesignRequest) -> bool {
     }
     plan.subtasks = reconciled;
     true
+}
+
+/// The sibling screens a valid continuation promises, deduplicated in order;
+/// `None` when the request carries no usable continuation contract.
+pub(super) fn promised_screen_names(req: &DesignRequest) -> Option<Vec<String>> {
+    let context = req.continuation_context.as_ref()?;
+    if !context.screen_width.is_finite()
+        || !context.screen_height.is_finite()
+        || context.screen_width <= 0.0
+        || context.screen_height <= 0.0
+    {
+        return None;
+    }
+    let mut screen_names = Vec::<String>::new();
+    for raw in &context.screen_names {
+        let name = raw.trim();
+        if !name.is_empty()
+            && !screen_names
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(name))
+        {
+            screen_names.push(name.to_string());
+        }
+    }
+    (!screen_names.is_empty()).then_some(screen_names)
 }

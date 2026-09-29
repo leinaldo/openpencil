@@ -41,6 +41,36 @@ pub(super) struct NavSurfaceRepair {
     fill_hex: String,
 }
 
+/// A root whose own sizing states its height — explicit `fit_content`, a
+/// mobile viewport, or a trailing-nav reflow screen. Cleanup and streaming
+/// growth both leave that height alone.
+pub(super) fn root_height_is_authored_contract(root: &PenNode) -> bool {
+    root_has_explicit_fit_content_height(root)
+        || has_explicit_mobile_viewport_contract(root)
+        || crate::mobile_reflow::has_mobile_trailing_nav_reflow_contract(root)
+}
+
+/// Streaming counterpart of [`adjust_root_height_to_content`]: a numeric
+/// page-root height is authoritative (content past it is clipped, not grown
+/// around), so a section landing below the preset would stay hidden until
+/// the finalize pass. Grow — never shrink — the page root holding `node_id`.
+pub(crate) fn grow_page_root_to_content(sink: &mut dyn DocSink, node_id: &NodeId) {
+    let Some(root_id) = sink
+        .state()
+        .active_children()
+        .iter()
+        .find(|root| {
+            root.id_str() == node_id.as_str()
+                || op_editor_core::walkers::descendant_contains(root, node_id)
+        })
+        .map(|root| root.id_str().to_string())
+    else {
+        return;
+    };
+    let preserved = find_root(sink.state(), &root_id).is_some_and(root_height_is_authored_contract);
+    adjust_root_height_to_content(sink, &root_id, preserved);
+}
+
 /// Grow roots whose authored numeric height cannot contain the estimated
 /// content. `preserve_root_height` is computed from an explicit sizing mode or
 /// mobile-screen semantics; narrow geometry alone is never enough to freeze a

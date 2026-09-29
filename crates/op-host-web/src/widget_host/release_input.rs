@@ -294,10 +294,24 @@ impl WidgetHost {
         // #13 web-undo parity: wrap the reorder/reparent in history like the
         // native host (op-host-native/click.rs::commit_layer_drag) so Cmd+Z
         // reverses a layer-panel drag.
-        self.with_doc_history(|s| match drop.position {
-            DropPosition::Before => s.reorder_before(source, anchor),
-            DropPosition::After => s.reorder_after(source, anchor),
-            DropPosition::Into => s.reorder_into(source, anchor),
+        // Read before the move: the pose the node renders with now.
+        let pose = op_editor_ui::widgets::drag_flow::layer_drop_pose(
+            &self.editor_state,
+            &self.layout_scene,
+            &source,
+            &anchor,
+            drop.position,
+        );
+        self.with_doc_history(|s| {
+            let moved = match drop.position {
+                DropPosition::Before => s.reorder_before(source.clone(), anchor),
+                DropPosition::After => s.reorder_after(source.clone(), anchor),
+                DropPosition::Into => s.reorder_into(source.clone(), anchor),
+            };
+            if let (true, Some((x, y, rotation))) = (moved, pose) {
+                s.set_node_pose(&source, x, y, rotation);
+            }
+            moved
         });
         self.mark_dirty();
         true

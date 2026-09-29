@@ -144,14 +144,9 @@ impl WidgetHostNative {
         // Un-rotate the press cursor into the node's local frame —
         // anchors / handles are stored unrotated, and the move handler
         // computes its cumulative delta in the same frame.
-        let start_doc = match scene_node.filter(|n| n.rotation.abs() > f32::EPSILON) {
-            Some(n) => {
-                let b = n.aggregate_bounds();
-                let centre = Point2D::new(b.origin.x + b.size.x / 2.0, b.origin.y + b.size.y / 2.0);
-                op_editor_ui::widgets::rotate_point(doc_point, centre, -n.rotation)
-            }
-            None => doc_point,
-        };
+        let start_doc =
+            op_editor_ui::widgets::page_point_in_node(&self.layout_scene, &node_id, doc_point)
+                .unwrap_or(doc_point);
         // The anchor's fixed absolute position — handle drags offset
         // their delta against it.
         let anchor_doc = scene_node
@@ -222,19 +217,8 @@ impl WidgetHostNative {
         self.refresh_layout_scene();
         // Un-rotate the cursor into the path's local frame (anchor /
         // handle coords are stored unrotated).
-        let local = match self
-            .layout_scene
-            .active_page()
-            .and_then(|p| p.find(id.as_str()))
-            .filter(|n| n.rotation.abs() > f32::EPSILON)
-            .map(|n| (n.rotation, n.aggregate_bounds()))
-        {
-            Some((rot, b)) => {
-                let c = Point2D::new(b.origin.x + b.size.x / 2.0, b.origin.y + b.size.y / 2.0);
-                op_editor_ui::widgets::rotate_point(doc, c, -rot)
-            }
-            None => doc,
-        };
+        let local = op_editor_ui::widgets::page_point_in_node(&self.layout_scene, id.as_str(), doc)
+            .unwrap_or(doc);
         let delta = ((local.x - start.x) as f64, (local.y - start.y) as f64);
         // Writes start after the first real motion so a press-release
         // in place pushes no history.

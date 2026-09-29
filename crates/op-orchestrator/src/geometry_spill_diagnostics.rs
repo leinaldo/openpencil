@@ -2,13 +2,13 @@
 
 use super::*;
 
-/// A frame declaring a NUMERIC height but resolving MUCH taller — an
-/// oversized child inflated it (jian grows the parent instead of letting the
-/// child spill, so no edge ever crosses another and the width-overflow echo
-/// stays blind). Measured (GLM-5.2 test0711-1.op): a 300px image inside a
-/// declared-42px "Avatar" strip blew the strip — and the whole header —
-/// to 300px. A generous slack keeps line-height rounding out of the report;
-/// a real defect overshoots by multiples.
+/// A frame declaring a NUMERIC height whose children reach MUCH further —
+/// a numeric size is authoritative, so the oversized child spills out over
+/// whatever follows (the width-overflow echo only watches the horizontal
+/// axis). Measured (GLM-5.2 test0711-1.op): a 300px image inside a
+/// declared-42px "Avatar" strip ran across half the header. A generous
+/// slack keeps line-height rounding out of the report; a real defect
+/// overshoots by multiples.
 pub(super) const VERTICAL_SPILL_SLACK: f64 = 24.0;
 
 pub(super) fn collect_vertical_spill_diagnostics(
@@ -25,22 +25,23 @@ pub(super) fn collect_vertical_spill_diagnostics(
     let Some(declared) = v.get("height").and_then(Value::as_f64) else {
         return;
     };
-    let Some(resolved) = v
+    let Some(parent) = v
         .get("id")
         .and_then(Value::as_str)
         .and_then(|id| rects.get(id))
-        .map(|r| r.h)
     else {
         return;
     };
-    // Taffy treats a numeric size as the border box, but OpenPencil's
-    // post-layout repair reconciles an open container to its children's
-    // measured extent plus authored padding. A generated container whose
-    // children already consume the declared height can therefore resolve
-    // taller by exactly its numeric vertical padding. That is breathing room,
-    // not an oversized child. Expression padding is deliberately not guessed.
-    let padding_allowance = numeric_vertical_padding(v).unwrap_or(0.0);
-    if resolved <= declared + padding_allowance + VERTICAL_SPILL_SLACK {
+    let reach = children(v)
+        .iter()
+        .filter_map(|c| {
+            c.get("id")
+                .and_then(Value::as_str)
+                .and_then(|id| rects.get(id))
+        })
+        .map(|cr| cr.y + cr.h - parent.y)
+        .fold(parent.h, f64::max);
+    if reach <= declared + VERTICAL_SPILL_SLACK {
         return;
     }
     let culprit = children(v)
@@ -56,16 +57,16 @@ pub(super) fn collect_vertical_spill_diagnostics(
     let blame = culprit
         .map(|(label, h)| {
             format!(
-                " — its child {label} is {}px tall and inflates it",
+                " — its child {label} is {}px tall and spills out of it",
                 h.round()
             )
         })
         .unwrap_or_default();
     out.push(format!(
-        "{}: declared {}px tall but resolved {}px{blame}; shrink the oversized content to fit the declared height (or grow the parent on purpose)",
+        "{}: declared {}px tall but its content reaches {}px{blame}; shrink the oversized content to fit the declared height (or grow the parent on purpose)",
         diag_label(v),
         declared.round(),
-        resolved.round()
+        reach.round()
     ));
 }
 

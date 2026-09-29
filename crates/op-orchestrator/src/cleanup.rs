@@ -80,6 +80,7 @@ use cleanup_clip_row_stroke::*;
 use cleanup_container_geometry::*;
 use cleanup_equalize_siblings::*;
 use cleanup_image_slots::*;
+pub(crate) use cleanup_root_and_nav::grow_page_root_to_content;
 use cleanup_root_and_nav::*;
 use cleanup_root_patches::*;
 use cleanup_root_transform::*;
@@ -667,11 +668,7 @@ fn run_cleanup_passes_with_summary_and_policy(
         // below only sees what a move or a shrink cannot fix.
         run_overflow_prepass(sink, rid, summary, &mut counter);
         let preserve_root_height = policy.preserve_requested_root_height
-            || find_root(sink.state(), rid).is_some_and(|root| {
-                root_has_explicit_fit_content_height(root)
-                    || has_explicit_mobile_viewport_contract(root)
-                    || crate::mobile_reflow::has_mobile_trailing_nav_reflow_contract(root)
-            });
+            || find_root(sink.state(), rid).is_some_and(root_height_is_authored_contract);
         if preserve_root_height {
             let mut guarded = PreserveRootHeightSink {
                 inner: sink,

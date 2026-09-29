@@ -99,7 +99,8 @@ fn rail_width_collapse_is_echoed_for_the_model_under_real_layout() {
 
 /// GLM-5.2 measured (test0711-1.op): a 300px-tall image inside a 42px
 /// "Avatar" strip painted across half the header. The width-overflow echo
-/// is blind to the vertical axis — this echo covers it.
+/// is blind to the vertical axis — this echo covers it. The strip keeps its
+/// numeric 42px, so the image spills out over what follows.
 #[test]
 fn image_much_taller_than_its_parent_is_echoed_vertically() {
     let doc: jian_ops_schema::PenDocument = serde_json::from_value(serde_json::json!({
@@ -126,14 +127,14 @@ fn image_much_taller_than_its_parent_is_echoed_vertically() {
     assert!(
         issues
             .iter()
-            .any(|i| i.contains("woman face headshot") && i.contains("inflates")),
+            .any(|i| i.contains("woman face headshot") && i.contains("spills out")),
         "vertical spill must be echoed: {issues:?}"
     );
 }
 
 /// The bottom-breathing cleanup adds numeric root padding without changing
-/// business children. OpenPencil's post-layout reconciliation includes that
-/// padding in the resolved root extent; it is not evidence of a tall child.
+/// business children. Padding inside the declared height is breathing room,
+/// not evidence of a tall child.
 #[test]
 fn numeric_root_padding_alone_is_not_echoed_as_vertical_spill() {
     let doc: jian_ops_schema::PenDocument = serde_json::from_value(serde_json::json!({
@@ -150,13 +151,6 @@ fn numeric_root_padding_alone_is_not_echoed_as_vertical_spill() {
     }))
     .expect("doc");
     let state = op_editor_core::EditorState::from_document(doc);
-    let rects = resolved_rects(&state);
-    let resolved_root = rects.get("root").expect("root rect").h;
-    assert!(
-        resolved_root > 844.0 + VERTICAL_SPILL_SLACK,
-        "fixture must exercise post-layout padding growth, got {resolved_root}"
-    );
-
     let issues = super::geometry_diagnostics(&state);
     assert!(
         !issues

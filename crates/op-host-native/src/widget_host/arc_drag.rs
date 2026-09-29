@@ -24,12 +24,9 @@ impl WidgetHostNative {
             return None;
         }
         let centre = Point2D::new(b.origin.x + b.size.x / 2.0, b.origin.y + b.size.y / 2.0);
-        // Un-rotate the cursor into the ellipse's local frame.
-        let doc = if node.rotation.abs() > f32::EPSILON {
-            op_editor_ui::widgets::rotate_point(doc, centre, -node.rotation)
-        } else {
-            doc
-        };
+        // Into the ellipse's own frame, through its ancestors' turns too.
+        let doc = op_editor_ui::widgets::page_point_in_node(&self.layout_scene, id.as_str(), doc)
+            .unwrap_or(doc);
         // Cursor offset from the ellipse centre, normalised by the
         // radii so the angle is the same convention the painter uses.
         let nx = (doc.x - centre.x) / (b.size.x / 2.0);

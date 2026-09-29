@@ -403,6 +403,10 @@ pub(crate) async fn run_subtask_with_reveal_at_and_outcomes(
         return fail(error);
     };
 
+    if !crate::plan_normalize::request_fixes_root_height(req) {
+        crate::cleanup::grow_page_root_to_content(sink, &parent_id);
+    }
+
     let headline = inserted_root_ids.iter().find_map(|root_id| {
         op_editor_core::walkers::find_node(
             sink.state().active_children(),

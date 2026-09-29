@@ -228,7 +228,6 @@ pub mod collab_panel;
 pub mod collab_ui;
 pub mod cursor_hover_flow;
 pub mod drag_flow;
-mod drag_flow_geometry;
 mod drag_flow_index;
 pub mod host_canvas_geometry;
 pub mod host_frame_bookkeeping;
@@ -239,6 +238,8 @@ mod layer_context_flow;
 pub mod press_flow;
 mod prompt_center_press_flow;
 mod scene_template_press_flow;
+mod scene_transform;
+pub use scene_transform::{node_point_on_page, node_renders_mirrored, page_point_in_node};
 pub mod scroll_flow;
 
 // Step 4 — icon glyph drawer for editor chrome (lucide-flavored line art).
@@ -457,8 +458,9 @@ pub use toolbar::Toolbar;
 
 pub use canvas_layout_transition::{CanvasLayoutTransition, CANVAS_LAYOUT_TRANSITION_MS};
 pub use canvas_viewport::{
-    arc_handle_positions, path_handle_positions, rotate_point, rotation_corner_at_point,
-    selection_handle_at_point, ArcHandle, CanvasNodeDragOverlay, CanvasViewport, SelectionHandle,
+    arc_handle_positions, path_handle_positions, resize_bounds_on_page, rotate_point,
+    rotation_corner_at_point, selection_handle_at_point, selection_handle_screen_angle, ArcHandle,
+    CanvasNodeDragOverlay, CanvasViewport, SelectionHandle,
 };
 pub use canvas_viewport_paint::{paint_scene_page, paint_scene_page_without_video_badge};
 pub use canvas_viewport_widget::widget_text_inset_left;
