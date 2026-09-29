@@ -43,11 +43,20 @@ pub struct CanvasOverlayRect {
     pub y: f64,
     pub w: f64,
     pub h: f64,
+    /// Radians, clockwise about the rect centre — the rendered angle of
+    /// the node the overlay outlines, including its ancestors'.
+    pub rotation: f64,
 }
 
 impl CanvasOverlayRect {
     pub fn new(x: f64, y: f64, w: f64, h: f64) -> Self {
-        Self { x, y, w, h }
+        Self {
+            x,
+            y,
+            w,
+            h,
+            rotation: 0.0,
+        }
     }
 }
 

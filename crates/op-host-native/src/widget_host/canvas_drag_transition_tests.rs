@@ -34,7 +34,7 @@ fn starting_node_drag_cancels_prior_layout_transition() {
         moved: false,
         total_dx: 0.0,
         total_dy: 0.0,
-        overlay_bounds: None,
+        ..Default::default()
     });
     assert!(host.apply_cursor_move(520.0, 500.0));
 

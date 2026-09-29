@@ -331,6 +331,7 @@ fn drop_into_free_container_preserves_visual_position_as_relative_xy() {
         260.0,
         50.0,
         40.0,
+        None,
     ));
 
     let src = find_node(s.active_children(), &NodeId::new("src")).unwrap();
@@ -360,6 +361,7 @@ fn drop_to_page_root_makes_nested_node_a_root_at_absolute_position() {
         80.0,
         50.0,
         40.0,
+        None,
     ));
 
     let ids: Vec<&str> = s
@@ -391,6 +393,7 @@ fn drop_root_into_free_container_preserves_visual_position() {
         230.0,
         50.0,
         40.0,
+        None,
     ));
 
     let root_ids: Vec<&str> = s
@@ -435,6 +438,7 @@ fn drop_root_into_flex_container_clears_xy_and_inserts_at_index() {
         245.0,
         50.0,
         40.0,
+        None,
     ));
 
     let stack = find_node(s.active_children(), &NodeId::new("stack")).unwrap();
@@ -464,6 +468,7 @@ fn drop_into_own_descendant_is_rejected_without_detaching() {
         130.0,
         200.0,
         200.0,
+        None,
     ));
 
     assert_eq!(s.active_children().len(), 1);
@@ -715,4 +720,74 @@ fn resizing_text_with_explicit_growth_keeps_it() {
         PenNode::Text(t) => assert_eq!(t.text_growth, Some(TextGrowth::Auto)),
         other => panic!("expected text node, got {other:?}"),
     }
+}
+
+#[test]
+fn drop_into_container_writes_the_supplied_own_rotation() {
+    let boxed = rect("box", "Box", 10.0, 10.0, 50.0, 40.0);
+    let target = frame("target", "Target", 400.0, 200.0, 240.0, 180.0, vec![]);
+    let mut s = state_with(vec![boxed, target]);
+
+    assert!(s.move_node_to_drop_target(
+        &NodeId::new("box"),
+        DragDropTarget::Container {
+            parent_id: NodeId::new("target"),
+            parent_abs_x: 400.0,
+            parent_abs_y: 200.0,
+            index: 0,
+        },
+        450.0,
+        260.0,
+        50.0,
+        40.0,
+        Some(-30.0),
+    ));
+
+    let moved = find_node(s.active_children(), &NodeId::new("box")).unwrap();
+    assert_eq!(moved.base().rotation, Some(-30.0));
+}
+
+#[test]
+fn world_drag_translation_follows_the_cursor_inside_a_rotated_parent() {
+    let child = rect("r1", "Leaf", 10.0, 10.0, 20.0, 20.0);
+    let mut parent = frame("f1", "Card", 0.0, 0.0, 100.0, 100.0, vec![child]);
+    parent.base_mut().rotation = Some(90.0);
+    let mut s = state_with(vec![parent]);
+    s.set_single_selection(NodeId::new("r1"));
+
+    assert!(s.translate_selected_world(10.0, 0.0));
+
+    // +10 on screen runs along −y of a parent rotated 90° clockwise.
+    let moved = find_node(s.active_children(), &NodeId::new("r1")).unwrap();
+    assert!((moved.base().x.unwrap() - 10.0).abs() < 1e-9);
+    assert!(moved.base().y.unwrap().abs() < 1e-9);
+}
+
+#[test]
+fn drop_target_move_advances_the_document_revision() {
+    let boxed = rect("box", "Box", 10.0, 10.0, 50.0, 40.0);
+    let target = frame("target", "Target", 400.0, 200.0, 240.0, 180.0, vec![]);
+    let mut s = state_with(vec![boxed, target]);
+    let before = s.document_revision();
+
+    assert!(s.move_node_to_drop_target(
+        &NodeId::new("box"),
+        DragDropTarget::Container {
+            parent_id: NodeId::new("target"),
+            parent_abs_x: 400.0,
+            parent_abs_y: 200.0,
+            index: 0,
+        },
+        450.0,
+        260.0,
+        50.0,
+        40.0,
+        None,
+    ));
+
+    assert_ne!(
+        s.document_revision(),
+        before,
+        "revision-keyed caches (layer tree, thumbnails) must see the reparent"
+    );
 }

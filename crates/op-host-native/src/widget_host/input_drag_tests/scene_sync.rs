@@ -30,7 +30,7 @@ fn dragging_a_selection_with_a_locked_node_does_not_drift_it_in_the_scene() {
         moved: true,
         total_dx: 0.0,
         total_dy: 0.0,
-        overlay_bounds: None,
+        ..Default::default()
     });
     assert!(host.apply_cursor_move(540.0, 500.0));
 
@@ -76,7 +76,7 @@ fn incremental_drag_then_doc_restored_to_cached_value_rebuilds_the_scene() {
         moved: true,
         total_dx: 0.0,
         total_dy: 0.0,
-        overlay_bounds: None,
+        ..Default::default()
     });
     assert!(host.apply_cursor_move(540.0, 500.0));
     let patched = scene_node_xy(&host, "free");

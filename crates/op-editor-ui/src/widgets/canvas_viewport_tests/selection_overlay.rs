@@ -289,3 +289,45 @@ fn multi_selection_overlay_omits_count_label_and_paints_union_dimensions() {
         backend.texts
     );
 }
+
+#[test]
+fn rotated_drop_preview_paints_target_and_ghost_under_their_rotation() {
+    use op_editor_core::editor_ui_state::{CanvasDropIndicator, CanvasOverlayRect};
+    let _guard = crate::agent_indicator_test_support::lock();
+    op_editor_core::agent_indicators::clear();
+    let mut state = EditorState::new();
+    state.doc.children = vec![named_rect_node("n2", "Schedule Card 1")];
+    let scene = sample_scene();
+    let mut viewport = CanvasViewport::from_editor(&state, &scene);
+    viewport.drop_indicator = Some(CanvasDropIndicator {
+        ghost: CanvasOverlayRect {
+            rotation: 0.3,
+            ..CanvasOverlayRect::new(420.0, 30.0, 96.0, 48.0)
+        },
+        target: Some(CanvasOverlayRect {
+            rotation: 0.5,
+            ..CanvasOverlayRect::new(540.0, 30.0, 120.0, 80.0)
+        }),
+        insertion: None,
+    });
+
+    let mut backend = RecordingBackend::default();
+    {
+        let mut cx = PaintCx {
+            backend: &mut backend,
+        };
+        viewport.paint(&mut cx, Rect::xywh(0.0, 0.0, 800.0, 600.0));
+    }
+
+    let primary = viewport.theme.primary;
+    assert_eq!(
+        active_rotations_at_first_stroke(&backend, Color { a: 0.45, ..primary }),
+        Some(vec![(0.5, Point2D::new(600.0, 70.0))]),
+        "target outline rotates about the target centre"
+    );
+    assert_eq!(
+        active_rotations_at_first_stroke(&backend, Color { a: 0.85, ..primary }),
+        Some(vec![(0.3, Point2D::new(468.0, 54.0))]),
+        "dashed ghost rotates about the ghost centre"
+    );
+}

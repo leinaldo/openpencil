@@ -294,7 +294,10 @@ impl EditorState {
     /// When the node changes parent, the resolved drag bounds are
     /// frozen as literal `width` / `height` so keyword sizing such as
     /// `fill_container` keeps its visual size after leaving the old
-    /// container.
+    /// container. `rotation_deg` replaces the node's own rotation — the
+    /// host passes the angle that keeps its rendered angle under the
+    /// target's rotated ancestors; `None` leaves it untouched.
+    #[allow(clippy::too_many_arguments)]
     pub fn move_node_to_drop_target(
         &mut self,
         id: &NodeId,
@@ -303,6 +306,7 @@ impl EditorState {
         abs_y: f64,
         abs_w: f64,
         abs_h: f64,
+        rotation_deg: Option<f64>,
     ) -> bool {
         if !id.is_real() || !self.is_subtree_unlocked(id) {
             return false;
@@ -354,6 +358,9 @@ impl EditorState {
         }
         {
             let base = node.base_mut();
+            if let Some(deg) = rotation_deg {
+                base.rotation = (deg.abs() > 1e-9).then_some(deg);
+            }
             if target_flex {
                 base.x = None;
                 base.y = None;
@@ -366,11 +373,15 @@ impl EditorState {
             }
         }
 
-        walkers::insert_into_parent(
+        let inserted = walkers::insert_into_parent(
             self.active_children_mut(),
             target_parent.as_ref(),
             Some(target_index),
             node,
-        )
+        );
+        if inserted {
+            self.mark_document_changed();
+        }
+        inserted
     }
 }

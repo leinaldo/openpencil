@@ -9,6 +9,7 @@
 use crate::id_allocator::{IdAllocError, IdAllocator, SequentialIdAllocator};
 use crate::node_id::NodeId;
 use crate::pen_node_ext::PenNodeExt;
+use glam::{DMat2, DVec2};
 use jian_ops_schema::node::PenNode;
 use std::collections::HashSet;
 
@@ -504,22 +505,62 @@ pub fn translate_editable_subtree(
     parent_is_flex: bool,
     ancestor_in_set: bool,
 ) -> bool {
+    translate_editable_subtree_mapped(
+        children,
+        editable,
+        DVec2::new(dx, dy),
+        None,
+        parent_is_flex,
+        ancestor_in_set,
+    )
+}
+
+/// [`translate_editable_subtree`] for a page-space delta: each moved
+/// node receives the delta mapped into its parent's frame.
+pub fn translate_editable_subtree_world(
+    children: &mut [PenNode],
+    editable: &HashSet<&str>,
+    dx: f64,
+    dy: f64,
+) -> bool {
+    translate_editable_subtree_mapped(
+        children,
+        editable,
+        DVec2::new(dx, dy),
+        Some(DMat2::IDENTITY),
+        false,
+        false,
+    )
+}
+
+/// `page_to_local` maps a page-space vector into `children`'s frame;
+/// `None` treats the delta as already local.
+fn translate_editable_subtree_mapped(
+    children: &mut [PenNode],
+    editable: &HashSet<&str>,
+    delta: DVec2,
+    page_to_local: Option<DMat2>,
+    parent_is_flex: bool,
+    ancestor_in_set: bool,
+) -> bool {
+    let local = page_to_local.map_or(delta, |m| m * delta);
     let mut moved = false;
     for child in children.iter_mut() {
         let in_set = editable.contains(child.id_str());
         if in_set && !parent_is_flex && !ancestor_in_set {
-            translate_subtree(child, dx, dy);
+            translate_subtree(child, local.x, local.y);
             moved = true;
         }
         let child_is_flex = child.is_auto_layout_container();
         let child_ancestor_in_set = ancestor_in_set || in_set;
+        let child_map = page_to_local.map(|m| inverse_own_linear(child) * m);
         if child.children().is_some() {
             if let Some(grand) = child.children_mut() {
-                if translate_editable_subtree(
+                if translate_editable_subtree_mapped(
                     grand,
                     editable,
-                    dx,
-                    dy,
+                    delta,
+                    child_map,
                     child_is_flex,
                     child_ancestor_in_set,
                 ) {
@@ -529,6 +570,43 @@ pub fn translate_editable_subtree(
         }
     }
     moved
+}
+
+/// Inverse of a node's own flip-then-rotate linear part (paint order:
+/// `scale(flip)` then `rotate`, so `(S·R)⁻¹ = R⁻¹·S`). Children live
+/// in the frame this transform maps to the parent's.
+pub fn inverse_own_linear(node: &PenNode) -> DMat2 {
+    let base = node.base();
+    let flip = DVec2::new(
+        if base.flip_x == Some(true) { -1.0 } else { 1.0 },
+        if base.flip_y == Some(true) { -1.0 } else { 1.0 },
+    );
+    DMat2::from_angle(-base.rotation.unwrap_or(0.0).to_radians()) * DMat2::from_diagonal(flip)
+}
+
+/// Map a page-space delta into the frame `target`'s x / y live in
+/// (its parent's). `None` when `target` is absent.
+pub fn page_delta_to_local(
+    children: &[PenNode],
+    target: &NodeId,
+    dx: f64,
+    dy: f64,
+) -> Option<(f64, f64)> {
+    fn walk(nodes: &[PenNode], target: &NodeId, m: DMat2) -> Option<DMat2> {
+        for node in nodes {
+            if node.id_str() == target.as_str() {
+                return Some(m);
+            }
+            if let Some(children) = node.children() {
+                if let Some(found) = walk(children, target, inverse_own_linear(node) * m) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+    let local = walk(children, target, DMat2::IDENTITY)? * DVec2::new(dx, dy);
+    Some((local.x, local.y))
 }
 
 /// First duplicate id found in the forest, or `None` when all ids
