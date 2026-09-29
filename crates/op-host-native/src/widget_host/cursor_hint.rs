@@ -8,10 +8,10 @@
 //! canvas-relative branch derives from `canvas_region` per the
 //! coordinate invariant.
 
-use super::{cursor_for_handle, CursorHint, WidgetHostNative};
+use super::{cursor_for_resize_angle, CursorHint, WidgetHostNative};
 use op_editor_ui::widgets::{
-    rotation_corner_at_point, selection_handle_at_point, AIChatHit, AIChatPlaceholder,
-    ChatResizeEdge, PromptCenterPanel,
+    rotation_corner_at_point, selection_handle_at_point, selection_handle_screen_angle, AIChatHit,
+    AIChatPlaceholder, ChatResizeEdge, PromptCenterPanel, SelectionHandle,
 };
 use op_editor_ui::{Point2D, Rect};
 
@@ -24,6 +24,12 @@ impl WidgetHostNative {
             ChatResizeEdge::Nw | ChatResizeEdge::Se => CursorHint::ResizeNwse,
             ChatResizeEdge::Ne | ChatResizeEdge::Sw => CursorHint::ResizeNesw,
         }
+    }
+
+    /// The resize cursor for a selection handle, turned with the node.
+    fn handle_cursor(&self, handle: SelectionHandle) -> CursorHint {
+        selection_handle_screen_angle(&self.layout_scene, &self.editor_state, handle)
+            .map_or(CursorHint::Default, cursor_for_resize_angle)
     }
 
     pub fn cursor_hint(&self, x: f32, y: f32, viewport_w: f32, viewport_h: f32) -> CursorHint {
@@ -180,7 +186,7 @@ impl WidgetHostNative {
             return CursorHint::Rotate;
         }
         if let Some(handle) = self.handle_drag.map(|d| d.handle) {
-            return cursor_for_handle(handle);
+            return self.handle_cursor(handle);
         }
         if !self.over_canvas(x, y, viewport_w, viewport_h) {
             return CursorHint::Default;
@@ -241,7 +247,7 @@ impl WidgetHostNative {
                     &self.editor_state,
                     point,
                 ) {
-                    return cursor_for_handle(handle);
+                    return self.handle_cursor(handle);
                 }
                 if rotation_corner_at_point(
                     canvas_rect,

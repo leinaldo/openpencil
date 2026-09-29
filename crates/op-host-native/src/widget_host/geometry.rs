@@ -674,13 +674,11 @@ impl WidgetHostNative {
         let node = self.layout_scene.active_page()?.find(&sel)?;
         let handles = op_editor_ui::widgets::arc_handle_positions(node)?;
         let zoom = self.editor_state.viewport.zoom.max(0.0001);
-        let mut doc_point = canvas_geometry::canvas_doc_point_unclamped(&self.editor_state, x, y);
-        // Un-rotate the cursor into the ellipse's local frame.
-        if node.rotation.abs() > f32::EPSILON {
-            let b = node.bounds;
-            let centre = Point2D::new(b.origin.x + b.size.x / 2.0, b.origin.y + b.size.y / 2.0);
-            doc_point = op_editor_ui::widgets::rotate_point(doc_point, centre, -node.rotation);
-        }
+        let doc_point = canvas_geometry::canvas_doc_point_unclamped(&self.editor_state, x, y);
+        // Into the ellipse's own frame, through its ancestors' turns too.
+        let doc_point =
+            op_editor_ui::widgets::page_point_in_node(&self.layout_scene, &sel, doc_point)
+                .unwrap_or(doc_point);
         // ~7 screen-px grab radius, expressed in doc space.
         let r2 = 49.0 / (zoom * zoom);
         // Reverse paint order so the topmost-painted handle wins —

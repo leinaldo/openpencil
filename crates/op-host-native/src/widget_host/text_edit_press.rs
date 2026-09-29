@@ -58,24 +58,6 @@ impl RenderBackend for MeasureOnly<'_> {
     }
 }
 
-/// Inverse-rotate a doc point about the node's bounds centre so hit
-/// geometry tracks a rotated text node's painted glyphs. Mirroring
-/// (`flip_x` / `flip_y`) is not compensated — flipped text is rare
-/// and the caret stays within the node either way.
-fn inverse_rotate_doc(p: Point2D, node: &SceneNode) -> Point2D {
-    if node.rotation.abs() <= f32::EPSILON {
-        return p;
-    }
-    let b = node.bounds;
-    let cx = b.origin.x + b.size.x / 2.0;
-    let cy = b.origin.y + b.size.y / 2.0;
-    let (s, c) = (-node.rotation).sin_cos();
-    Point2D::new(
-        c * (p.x - cx) - s * (p.y - cy) + cx,
-        s * (p.x - cx) + c * (p.y - cy) + cy,
-    )
-}
-
 impl WidgetHostNative {
     fn with_measure_only<R>(&self, f: impl FnOnce(&mut MeasureOnly<'_>) -> R) -> R {
         let mut measure = self
@@ -167,12 +149,12 @@ impl WidgetHostNative {
         })
     }
 
-    /// Convert a screen point to the edited node's un-rotated doc
-    /// space (canvas-region origin + viewport pan/zoom + inverse node
-    /// rotation).
+    /// Convert a screen point to the edited node's own doc frame
+    /// (canvas-region origin + viewport pan/zoom, then the inverse of its
+    /// own and its ancestors' flips / rotations).
     fn text_edit_doc_point(&self, x: f32, y: f32, node: &SceneNode) -> Point2D {
         let doc = canvas_geometry::canvas_doc_point_unclamped(&self.editor_state, x, y);
-        inverse_rotate_doc(doc, node)
+        op_editor_ui::widgets::page_point_in_node(&self.layout_scene, &node.id, doc).unwrap_or(doc)
     }
 
     /// Byte offset a press at screen `(x, y)` places the caret at —

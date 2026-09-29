@@ -95,10 +95,24 @@ impl WidgetHostNative {
         // (document-store-node-actions.ts:106-132) — push only when
         // the mutator actually moved something (a rejected cycle /
         // missing anchor must not pollute the undo stack).
-        self.with_doc_history(|s| match drop.position {
-            DropPosition::Before => s.reorder_before(source, anchor),
-            DropPosition::After => s.reorder_after(source, anchor),
-            DropPosition::Into => s.reorder_into(source, anchor),
+        // Read before the move: the pose the node renders with now.
+        let pose = op_editor_ui::widgets::drag_flow::layer_drop_pose(
+            &self.editor_state,
+            &self.layout_scene,
+            &source,
+            &anchor,
+            drop.position,
+        );
+        self.with_doc_history(|s| {
+            let moved = match drop.position {
+                DropPosition::Before => s.reorder_before(source.clone(), anchor),
+                DropPosition::After => s.reorder_after(source.clone(), anchor),
+                DropPosition::Into => s.reorder_into(source.clone(), anchor),
+            };
+            if let (true, Some((x, y, rotation))) = (moved, pose) {
+                s.set_node_pose(&source, x, y, rotation);
+            }
+            moved
         });
         self.mark_dirty();
         true

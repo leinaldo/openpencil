@@ -1,5 +1,4 @@
 use op_editor_core::pen_node_ext::PenNodeExt;
-use op_editor_ui::util::resize_bounds;
 use op_editor_ui::widgets::{selection_handle_at_point, SelectionHandle};
 use op_editor_ui::{Point2D, Rect};
 
@@ -76,15 +75,28 @@ impl WidgetHost {
         let zoom = self.editor_state.viewport.zoom.max(0.0001);
         let dx = (x - drag.start_screen_x) / zoom;
         let dy = (y - drag.start_screen_y) / zoom;
-        let new_bounds = resize_bounds(drag.start_bounds, drag.handle, dx, dy);
-        let new_x = drag.handle.moves_left_edge().then(|| {
-            drag.start_authored_x.unwrap_or(0.0)
-                + f64::from(new_bounds.origin.x - drag.start_bounds.origin.x)
-        });
-        let new_y = drag.handle.moves_top_edge().then(|| {
-            drag.start_authored_y.unwrap_or(0.0)
-                + f64::from(new_bounds.origin.y - drag.start_bounds.origin.y)
-        });
+        let new_bounds = op_editor_ui::widgets::resize_bounds_on_page(
+            &self.layout_scene,
+            self.editor_state.selection.anchor.as_str(),
+            drag.start_bounds,
+            drag.handle,
+            dx,
+            dy,
+        );
+        // A rotated node's resize also shifts the origin to pin the
+        // opposite edge on screen, whichever handle is dragged.
+        let new_x = (drag.handle.moves_left_edge()
+            || new_bounds.origin.x != drag.start_bounds.origin.x)
+            .then(|| {
+                drag.start_authored_x.unwrap_or(0.0)
+                    + f64::from(new_bounds.origin.x - drag.start_bounds.origin.x)
+            });
+        let new_y = (drag.handle.moves_top_edge()
+            || new_bounds.origin.y != drag.start_bounds.origin.y)
+            .then(|| {
+                drag.start_authored_y.unwrap_or(0.0)
+                    + f64::from(new_bounds.origin.y - drag.start_bounds.origin.y)
+            });
         self.editor_state.resize_selected_bounds(
             rect_to_doc_rect(new_bounds),
             drag.handle.resize_axes(),

@@ -5,12 +5,16 @@
 //! repository's 800-line cap. Every public item is re-exported from the
 //! spine so existing `canvas_viewport::…` paths keep resolving.
 
+use super::super::scene_transform::{
+    centre, find_with_parent_to_page, own_linear, own_transform, own_transform_about,
+};
 use crate::layout_scene::LayoutScene;
 use crate::layout_scene::NodeKind;
 use crate::layout_scene::{SceneAnchor, SceneNode};
+use crate::util::resize_bounds;
 use crate::{Point2D, Rect};
+use glam::{DAffine2, DMat2, DVec2};
 use op_editor_core::EditorState;
-use op_editor_core::Viewport as DocViewport;
 /// One of the 8 selection handles (corners + edge midpoints) the
 /// selection overlay paints. Used by the host to dispatch resize
 /// drags: each variant fixes the corresponding edge / corner of
@@ -136,19 +140,51 @@ pub fn arc_handle_positions(node: &SceneNode) -> Option<[(ArcHandle, Point2D); 3
     ])
 }
 
-/// The single resolved scene node the editor's selection anchor
-/// points at, or `None` when the selection isn't a single node that
-/// resolves on the active page. Shared by the two selection-overlay
-/// hit-tests below — they only fire on single-select.
-fn selected_scene_node<'a>(
-    scene: &'a LayoutScene,
-    state: &EditorState,
-) -> Option<&'a crate::layout_scene::SceneNode> {
+/// The single selected node with its unrotated bounds and the
+/// transform from those bounds' frame to the page (its own and its
+/// ancestors' flips / rotations) — how its handles render.
+struct SelectedFrame {
+    bounds: Rect,
+    to_page: DAffine2,
+}
+
+/// `None` unless the selection is one resolved node with real area.
+/// Shared by the handle hit-tests below — they only fire on
+/// single-select.
+fn selected_frame(scene: &LayoutScene, state: &EditorState) -> Option<SelectedFrame> {
     if state.selection_count() != 1 {
         return None;
     }
-    let anchor = state.selection.anchor.as_str();
-    scene.active_page()?.find(anchor)
+    let (node, parent_to_page) = find_with_parent_to_page(
+        &scene.active_page()?.children,
+        state.selection.anchor.as_str(),
+    )?;
+    let bounds = node.aggregate_bounds();
+    if bounds.size.x <= 0.0 || bounds.size.y <= 0.0 {
+        return None;
+    }
+    Some(SelectedFrame {
+        bounds,
+        to_page: parent_to_page * own_transform(node),
+    })
+}
+
+/// Screen `point` in the selected node's unrotated document frame.
+fn local_doc_point(
+    frame: &SelectedFrame,
+    canvas_rect: Rect,
+    state: &EditorState,
+    point: Point2D,
+) -> Point2D {
+    let doc = state.viewport.to_document(Point2D::new(
+        point.x - canvas_rect.origin.x,
+        point.y - canvas_rect.origin.y,
+    ));
+    let local = frame
+        .to_page
+        .inverse()
+        .transform_point2(DVec2::new(doc.x as f64, doc.y as f64));
+    Point2D::new(local.x as f32, local.y as f32)
 }
 
 /// Hit-test the rotation ring that sits just outside the four
@@ -172,27 +208,14 @@ pub fn rotation_corner_at_point(
     // multi-select overlay is outline-only), so gate the hit-test
     // to match — otherwise non-anchor "rotation zones" would
     // intercept clicks on dead air.
-    let node = selected_scene_node(scene, state)?;
-    let bounds = node.aggregate_bounds();
-    if bounds.size.x <= 0.0 || bounds.size.y <= 0.0 {
-        return None;
-    }
-    let viewport = DocViewport {
-        pan_x: state.viewport.pan_x,
-        pan_y: state.viewport.pan_y,
-        zoom: state.viewport.zoom,
-    };
-    let left = canvas_rect.origin.x + viewport.pan_x + bounds.origin.x * viewport.zoom;
-    let top = canvas_rect.origin.y + viewport.pan_y + bounds.origin.y * viewport.zoom;
-    let right = left + bounds.size.x * viewport.zoom;
-    let bottom = top + bounds.size.y * viewport.zoom;
-    // Inverse-rotate the cursor into the node's local space so the
-    // hit-test annulus tracks the rendered (rotated) corners.
-    let cx = (left + right) / 2.0;
-    let cy = (top + bottom) / 2.0;
-    let local = inverse_rotate(point, Point2D::new(cx, cy), node.rotation);
-    let inner = 6.0_f32;
-    let outer = ROTATE_OUTER_RADIUS;
+    let frame = selected_frame(scene, state)?;
+    let local = local_doc_point(&frame, canvas_rect, state, point);
+    let zoom = state.viewport.zoom.max(0.0001);
+    let inner = 6.0 / zoom;
+    let outer = ROTATE_OUTER_RADIUS / zoom;
+    let b = frame.bounds;
+    let (left, top) = (b.origin.x, b.origin.y);
+    let (right, bottom) = (left + b.size.x, top + b.size.y);
     let corners = [
         (SelectionHandle::TopLeft, left, top),
         (SelectionHandle::TopRight, right, top),
@@ -215,9 +238,10 @@ pub fn rotation_corner_at_point(
 /// handle center counts) or `None` if no selection / no handle.
 ///
 /// `canvas_rect` is the on-screen rect the canvas widget paints
-/// into (same value passed to `CanvasViewport::paint`). The
-/// transform from document → screen is identical to paint so a
-/// handle the user clicks is the handle they see.
+/// into (same value passed to `CanvasViewport::paint`). The cursor is
+/// taken into the node's own frame through the same flip / rotation
+/// chain paint replays, so a handle the user clicks is the handle they
+/// see.
 ///
 /// INPUT path — reads the layout-resolved [`LayoutScene`] + the
 /// editor's selection / viewport state (see [`rotation_corner_at_point`]).
@@ -231,26 +255,13 @@ pub fn selection_handle_at_point(
     // overlay is outline-only — Figma parity), so gate the hit-
     // test to match. Otherwise the "anchor's handles" would hit-
     // test even though no handles are visible anywhere.
-    let node = selected_scene_node(scene, state)?;
-    let bounds = node.aggregate_bounds();
-    if bounds.size.x <= 0.0 || bounds.size.y <= 0.0 {
-        return None;
-    }
-    let viewport = DocViewport {
-        pan_x: state.viewport.pan_x,
-        pan_y: state.viewport.pan_y,
-        zoom: state.viewport.zoom,
-    };
-    let left = canvas_rect.origin.x + viewport.pan_x + bounds.origin.x * viewport.zoom;
-    let top = canvas_rect.origin.y + viewport.pan_y + bounds.origin.y * viewport.zoom;
-    let right = left + bounds.size.x * viewport.zoom;
-    let bottom = top + bounds.size.y * viewport.zoom;
-    let mid_x = (left + right) / 2.0;
-    let mid_y = (top + bottom) / 2.0;
-    // Inverse-rotate the cursor so handle hit-test tracks rendered
-    // (rotated) handle positions.
-    let local = inverse_rotate(point, Point2D::new(mid_x, mid_y), node.rotation);
-    let slop = 6.0;
+    let frame = selected_frame(scene, state)?;
+    let local = local_doc_point(&frame, canvas_rect, state, point);
+    let slop = 6.0 / state.viewport.zoom.max(0.0001);
+    let b = frame.bounds;
+    let (left, top) = (b.origin.x, b.origin.y);
+    let (right, bottom) = (left + b.size.x, top + b.size.y);
+    let (mid_x, mid_y) = ((left + right) / 2.0, (top + bottom) / 2.0);
     let anchors = [
         (SelectionHandle::TopLeft, left, top),
         (SelectionHandle::Top, mid_x, top),
@@ -269,19 +280,85 @@ pub fn selection_handle_at_point(
     None
 }
 
-/// Apply the inverse of a rotation about `pivot` to `point`. Used
-/// by hit-tests so a rotated selection's handles + rotation ring
-/// + body all match the rendered (rotated) geometry.
-fn inverse_rotate(point: Point2D, pivot: Point2D, radians: f32) -> Point2D {
-    if radians.abs() < f32::EPSILON {
-        return point;
+/// Screen direction (radians, clockwise from +x) the selected node's
+/// `handle` pushes outward once its own and its ancestors' flips /
+/// rotations apply — what the resize cursor should point along.
+pub fn selection_handle_screen_angle(
+    scene: &LayoutScene,
+    state: &EditorState,
+    handle: SelectionHandle,
+) -> Option<f32> {
+    let frame = selected_frame(scene, state)?;
+    let (x, y) = match handle {
+        SelectionHandle::Right => (1.0, 0.0),
+        SelectionHandle::BottomRight => (1.0, 1.0),
+        SelectionHandle::Bottom => (0.0, 1.0),
+        SelectionHandle::BottomLeft => (-1.0, 1.0),
+        SelectionHandle::Left => (-1.0, 0.0),
+        SelectionHandle::TopLeft => (-1.0, -1.0),
+        SelectionHandle::Top => (0.0, -1.0),
+        SelectionHandle::TopRight => (1.0, -1.0),
+    };
+    let d = frame.to_page.matrix2 * DVec2::new(x, y);
+    Some(d.y.atan2(d.x) as f32)
+}
+
+/// [`resize_bounds`] for a page-space drag of node `id`'s `handle`: the
+/// travel is measured along the node's own (rotated / flipped) axes and
+/// the opposite edge or corner stays where it renders. `start` is the
+/// node's unrotated bounds in its parent frame at press time.
+pub fn resize_bounds_on_page(
+    scene: &LayoutScene,
+    id: &str,
+    start: Rect,
+    handle: SelectionHandle,
+    page_dx: f32,
+    page_dy: f32,
+) -> Rect {
+    let found = scene
+        .active_page()
+        .and_then(|page| find_with_parent_to_page(&page.children, id));
+    let Some((node, parent_to_page)) = found else {
+        return resize_bounds(start, handle, page_dx, page_dy);
+    };
+    let linear = parent_to_page.matrix2 * own_linear(node);
+    if linear == DMat2::IDENTITY {
+        return resize_bounds(start, handle, page_dx, page_dy);
     }
-    let dx = point.x - pivot.x;
-    let dy = point.y - pivot.y;
-    let cos_t = (-radians).cos();
-    let sin_t = (-radians).sin();
-    Point2D::new(
-        pivot.x + dx * cos_t - dy * sin_t,
-        pivot.y + dx * sin_t + dy * cos_t,
+    let local = linear.inverse() * DVec2::new(page_dx as f64, page_dy as f64);
+    let resized = resize_bounds(start, handle, local.x as f32, local.y as f32);
+    // The node turns about its centre, which the resize moves; shift the
+    // rect so the point opposite the handle keeps its rendered spot.
+    let pinned = pinned_point(start, handle);
+    let before = own_transform_about(node, centre(start)).transform_point2(pinned);
+    let after = own_transform_about(node, centre(resized)).transform_point2(pinned);
+    let shift = before - after;
+    Rect::xywh(
+        resized.origin.x + shift.x as f32,
+        resized.origin.y + shift.y as f32,
+        resized.size.x,
+        resized.size.y,
     )
+}
+
+/// The point of `rect` a drag of `handle` leaves in place: the opposite
+/// corner, or the midpoint of the opposite edge.
+fn pinned_point(rect: Rect, handle: SelectionHandle) -> DVec2 {
+    let (left, top) = (rect.origin.x as f64, rect.origin.y as f64);
+    let (right, bottom) = (left + rect.size.x as f64, top + rect.size.y as f64);
+    let x = if handle.moves_left_edge() {
+        right
+    } else if handle.resizes_width() {
+        left
+    } else {
+        (left + right) / 2.0
+    };
+    let y = if handle.moves_top_edge() {
+        bottom
+    } else if handle.resizes_height() {
+        top
+    } else {
+        (top + bottom) / 2.0
+    };
+    DVec2::new(x, y)
 }

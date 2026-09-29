@@ -26,14 +26,9 @@ impl WidgetHost {
             .layout_scene
             .active_page()
             .and_then(|p| p.find(&node_id));
-        let start_doc = match scene_node.filter(|n| n.rotation.abs() > f32::EPSILON) {
-            Some(n) => {
-                let b = n.aggregate_bounds();
-                let centre = Point2D::new(b.origin.x + b.size.x / 2.0, b.origin.y + b.size.y / 2.0);
-                op_editor_ui::widgets::rotate_point(doc_point, centre, -n.rotation)
-            }
-            None => doc_point,
-        };
+        let start_doc =
+            op_editor_ui::widgets::page_point_in_node(&self.layout_scene, &node_id, doc_point)
+                .unwrap_or(doc_point);
         let anchor_doc = scene_node
             .and_then(|n| {
                 n.path_anchors
@@ -87,19 +82,8 @@ impl WidgetHost {
             )
         };
         self.refresh_layout_scene();
-        let local = match self
-            .layout_scene
-            .active_page()
-            .and_then(|p| p.find(id.as_str()))
-            .filter(|n| n.rotation.abs() > f32::EPSILON)
-            .map(|n| (n.rotation, n.aggregate_bounds()))
-        {
-            Some((rot, b)) => {
-                let c = Point2D::new(b.origin.x + b.size.x / 2.0, b.origin.y + b.size.y / 2.0);
-                op_editor_ui::widgets::rotate_point(doc, c, -rot)
-            }
-            None => doc,
-        };
+        let local = op_editor_ui::widgets::page_point_in_node(&self.layout_scene, id.as_str(), doc)
+            .unwrap_or(doc);
         let delta = ((local.x - start.x) as f64, (local.y - start.y) as f64);
         let is_move = delta.0.abs() > 0.001 || delta.1.abs() > 0.001;
         if is_move || already_moved {

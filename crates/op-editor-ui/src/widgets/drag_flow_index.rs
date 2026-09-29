@@ -1,7 +1,7 @@
 //! Gesture-scoped lookup index for pointer-rate canvas drop previews.
 
 use super::drag_flow::DragCommitPlan;
-use super::drag_flow_geometry::{
+use super::scene_transform::{
     centre, own_rotation_in, own_transform, page_overlay_line, page_overlay_rect, rect_around,
     to_point,
 };

@@ -126,6 +126,8 @@ mod home_document_swap;
 mod home_site_import;
 #[cfg(test)]
 mod rotated_drop_tests;
+#[cfg(test)]
+mod rotated_handle_tests;
 pub use home_document_swap::ReplacedHomeDocument;
 mod home_overlays;
 mod home_quick_start;
@@ -301,18 +303,20 @@ mod workspace_share;
 /// from `jian-core` so widgets (via `cursor_at`) and hosts share one vocabulary.
 /// The runner maps each variant to its native cursor (`CursorIcon` on desktop,
 /// CSS `cursor:` string on web). Domain/canvas cursor decisions (active tool,
-/// selection handles, resize gutters) stay host-side — see `cursor_for_handle`
-/// and `geometry::cursor_hint`.
+/// selection handles, resize gutters) stay host-side — see
+/// `cursor_for_resize_angle` and `geometry::cursor_hint`.
 pub use jian_core::CursorHint;
 
-/// Map a selection handle to its resize cursor. Stays host-side because it
-/// depends on the OP `SelectionHandle` type, which is not a jian-atomic concern.
-pub(in crate::widget_host) fn cursor_for_handle(h: SelectionHandle) -> CursorHint {
-    match h {
-        SelectionHandle::Left | SelectionHandle::Right => CursorHint::ResizeEw,
-        SelectionHandle::Top | SelectionHandle::Bottom => CursorHint::ResizeNs,
-        SelectionHandle::TopLeft | SelectionHandle::BottomRight => CursorHint::ResizeNwse,
-        SelectionHandle::TopRight | SelectionHandle::BottomLeft => CursorHint::ResizeNesw,
+/// Resize cursor closest to a selection handle's on-screen direction
+/// (radians, clockwise from +x — `selection_handle_screen_angle`), so a
+/// rotated node's handles point along its rotated axes.
+pub(in crate::widget_host) fn cursor_for_resize_angle(angle: f32) -> CursorHint {
+    // Opposite directions share a cursor: bucket the axis into 45° sectors.
+    match ((angle.to_degrees().rem_euclid(180.0) + 22.5) / 45.0) as u32 % 4 {
+        0 => CursorHint::ResizeEw,
+        1 => CursorHint::ResizeNwse,
+        2 => CursorHint::ResizeNs,
+        _ => CursorHint::ResizeNesw,
     }
 }
 

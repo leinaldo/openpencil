@@ -218,14 +218,24 @@ impl WidgetHostNative {
                 .and_then(|p| p.find(&selected_anchor))
             {
                 let bounds = node.aggregate_bounds();
-                let cx_doc = bounds.origin.x + bounds.size.x / 2.0;
-                let cy_doc = bounds.origin.y + bounds.size.y / 2.0;
+                let local_centre = Point2D::new(
+                    bounds.origin.x + bounds.size.x / 2.0,
+                    bounds.origin.y + bounds.size.y / 2.0,
+                );
+                // Pivot where the node renders — its ancestors' rotations
+                // move its centre away from the laid-out one.
+                let centre = op_editor_ui::widgets::node_point_on_page(
+                    &self.layout_scene,
+                    &selected_anchor,
+                    local_centre,
+                )
+                .unwrap_or(local_centre);
                 let center_screen_x = canvas_rect.origin.x
                     + self.editor_state.viewport.pan_x
-                    + cx_doc * self.editor_state.viewport.zoom;
+                    + centre.x * self.editor_state.viewport.zoom;
                 let center_screen_y = canvas_rect.origin.y
                     + self.editor_state.viewport.pan_y
-                    + cy_doc * self.editor_state.viewport.zoom;
+                    + centre.y * self.editor_state.viewport.zoom;
                 let start_cursor_angle = (y - center_screen_y).atan2(x - center_screen_x);
                 let start_rotation = node.rotation;
                 self.editor_state.commit_history();

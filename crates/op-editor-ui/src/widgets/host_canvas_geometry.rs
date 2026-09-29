@@ -651,14 +651,10 @@ pub fn path_anchor_hit(
     let (cx0, cy0, _cw, _ch) = canvas_region(state, viewport_w, viewport_h);
     let zoom = state.viewport.zoom.max(0.0001);
     let canvas_local = Point2D::new(x - cx0, y - cy0);
-    let mut doc = state.viewport.to_document(canvas_local);
-    // Un-rotate the cursor into the node's local frame — handle
-    // positions are stored unrotated but the path paints rotated.
-    if node.rotation.abs() > f32::EPSILON {
-        let b: Rect = node.aggregate_bounds();
-        let centre = Point2D::new(b.origin.x + b.size.x / 2.0, b.origin.y + b.size.y / 2.0);
-        doc = crate::widgets::rotate_point(doc, centre, -node.rotation);
-    }
+    let doc = state.viewport.to_document(canvas_local);
+    // Into the path's own frame — anchors are stored there, but the path
+    // paints under its own and its ancestors' flips / rotations.
+    let doc = crate::widgets::page_point_in_node(scene, &sel, doc).unwrap_or(doc);
     let r2 = grab_radius_sq(zoom);
     let hit = |p: Point2D| (doc.x - p.x).powi(2) + (doc.y - p.y).powi(2) <= r2;
     let pen_tool = matches!(state.tool, op_editor_core::Tool::Pen);
